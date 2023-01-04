@@ -1,7 +1,7 @@
 name: flutter_p2p_connection
-description: A new Flutter plugin project.
+description: A p2p wifi direct plugin.
 version: 0.0.1
-homepage:
+repository: https://github.com/ugo-studio/flutter_p2p_connection
 
 environment:
   sdk: '>=2.18.4 <3.0.0'
