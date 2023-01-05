@@ -8,6 +8,25 @@ import 'flutter_p2p_connection_platform_interface.dart';
 
 class FlutterP2pConnection {
   final int _port = 4045;
+  final int _code = 4045;
+  HttpServer? _server;
+  final List<WebSocket?> _sockets = [];
+
+  Future<String?> _myIPAddress() async {
+    List<NetworkInterface> interfaces = await NetworkInterface.list(
+      type: InternetAddressType.IPv4,
+      includeLinkLocal: true,
+    );
+    List<NetworkInterface> addr = interfaces
+        .where((e) => e.addresses.first.address.indexOf('192.') == 0)
+        .toList();
+
+    if (addr.isNotEmpty) {
+      return addr.first.addresses.first.address;
+    } else {
+      return null;
+    }
+  }
 
   Future<String?> getPlatformVersion() {
     return FlutterP2pConnectionPlatform.instance.getPlatformVersion();
@@ -176,72 +195,162 @@ class FlutterP2pConnection {
     );
   }
 
-  Future<bool> startServer({
-    required String ip,
-    required void Function(HttpServer server) onStarted,
-    required void Function(WebSocket socket) onConnect,
+  Future<bool> startSocket({
+    required String groupOwnerAddress,
+    required void Function(String address) onConnect,
     required void Function(dynamic) onRequest,
   }) async {
     try {
-      ip = ip.replaceFirst("/", "");
+      closeSocket();
+      groupOwnerAddress = groupOwnerAddress.replaceFirst("/", "");
       HttpServer httpServer = await HttpServer.bind(
-        ip,
+        groupOwnerAddress,
         _port,
         shared: true,
       );
-      debugPrint("FlutterP2pConnection: Started Server!");
-      onStarted(httpServer);
       httpServer.listen(
         (req) async {
           if (req.uri.path == '/ws') {
             WebSocket socketServer = await WebSocketTransformer.upgrade(req);
-            onConnect(socketServer);
-            debugPrint("FlutterP2pConnection: A device connected to Server!");
+            _sockets.add(socketServer);
             socketServer.listen(
               onRequest,
               cancelOnError: true,
               onDone: () {
-                debugPrint("FlutterP2pConnection: Closed Server!");
-                socketServer.close();
-                httpServer.close();
+                debugPrint("FlutterP2pConnection: Closed Socket!");
+                socketServer.close(_code);
+                _sockets.removeWhere(
+                    (e) => e == null ? true : e.closeCode == _code);
               },
             );
-          }
+            onConnect("${httpServer.address.address}:${httpServer.port}");
+            debugPrint("FlutterP2pConnection: A device connected to Socket!");
+          } else if (req.uri.path == '/file') {}
         },
         cancelOnError: true,
+        onError: (error, stack) {},
+        onDone: () {
+          closeSocket();
+        },
       );
+      _server = httpServer;
+      debugPrint("FlutterP2pConnection: Opened a Socket!");
       return true;
     } catch (_) {
       return false;
     }
   }
 
-  Future<WebSocket?> connectToServer({
-    required String ip,
-    required void Function(String address) onStarted,
+  Future<bool> connectToSocket({
+    required String groupOwnerAddress,
+    required void Function(String address) onConnect,
     required void Function(dynamic) onRequest,
   }) async {
     try {
-      if (ip.isNotEmpty) {
-        ip = ip.replaceFirst("/", "");
-        WebSocket socketServer = await WebSocket.connect('ws://$ip:$_port/ws');
-        debugPrint("FlutterP2pConnection: Started Socket!");
-        onStarted("$ip:$_port");
-        socketServer.listen(
+      closeSocket();
+      if (groupOwnerAddress.isNotEmpty) {
+        groupOwnerAddress = groupOwnerAddress.replaceFirst("/", "");
+        WebSocket socket =
+            await WebSocket.connect('ws://$groupOwnerAddress:$_port/ws');
+        _sockets.add(socket);
+        debugPrint(
+            "FlutterP2pConnection: Connected to Socket: $groupOwnerAddress:$_port");
+        socket.listen(
           onRequest,
           cancelOnError: true,
           onDone: () {
             debugPrint("FlutterP2pConnection: Closed Socket!");
-            socketServer.close();
+            socket.close(_code);
+            _sockets
+                .removeWhere((e) => e == null ? true : e.closeCode == _code);
           },
         );
-        return socketServer;
+        HttpServer httpServer = await HttpServer.bind(
+          (await _myIPAddress()) ?? "0.0.0.0",
+          _port,
+          shared: true,
+        );
+        httpServer.listen(
+          (req) async {
+            if (req.uri.path == '/file') {}
+          },
+          cancelOnError: true,
+          onError: (error, stack) {},
+          onDone: () {
+            closeSocket();
+          },
+        );
+        _server = httpServer;
+        onConnect("$groupOwnerAddress:$_port");
+        return true;
       } else {
-        return null;
+        return false;
       }
     } catch (_) {
-      return null;
+      return false;
     }
+  }
+
+  bool sendStringToSocket(String string) {
+    try {
+      for (WebSocket? socket in _sockets) {
+        if (socket != null) {
+          socket.add(string);
+        }
+      }
+      return true;
+    } catch (e) {
+      debugPrint("FlutterP2pConnection: Tranfer error: $e");
+      return false;
+    }
+  }
+
+  bool closeSocket() {
+    try {
+      if (_server != null) _server?.close();
+      for (WebSocket? socket in _sockets) {
+        if (socket != null) {
+          socket.close(_code);
+        }
+      }
+      _sockets.clear();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool?> checkLocationPermission() {
+    return FlutterP2pConnectionPlatform.instance.checkLocationPermission();
+  }
+
+  Future<bool?> askLocationPermission() async {
+    if (await FlutterP2pConnectionPlatform.instance.checkLocationPermission() ==
+        false) {
+      return FlutterP2pConnectionPlatform.instance.askLocationPermission();
+    } else {
+      return true;
+    }
+  }
+
+  Future<bool?> checkLocationEnabled() {
+    return FlutterP2pConnectionPlatform.instance.checkLocationEnabled();
+  }
+
+  Future<bool?> checkGpsEnabled() {
+    return FlutterP2pConnectionPlatform.instance.checkGpsEnabled();
+  }
+
+  Future<bool?> enableLocationServices() {
+    return FlutterP2pConnectionPlatform.instance.enableLocationServices();
+  }
+
+  Future<bool?> checkWifiEnabled() {
+    return FlutterP2pConnectionPlatform.instance.checkWifiEnabled();
+  }
+
+  Future<bool?> enableWifiServices() {
+    return FlutterP2pConnectionPlatform.instance.enableWifiServices();
   }
 }
 

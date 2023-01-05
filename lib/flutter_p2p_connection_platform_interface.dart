@@ -71,4 +71,32 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
   Future<bool?> pause() {
     throw UnimplementedError('pause() has not been implemented.');
   }
+
+  Future<bool?> checkLocationPermission() {
+    throw UnimplementedError('checkLocationPermission() has not been implemented.');
+  }
+
+  Future<bool?> askLocationPermission() {
+    throw UnimplementedError('askLocationPermission() has not been implemented.');
+  }
+
+  Future<bool?> checkLocationEnabled() {
+    throw UnimplementedError('checkLocationEnabled() has not been implemented.');
+  }
+
+  Future<bool?> checkGpsEnabled() {
+    throw UnimplementedError('checkGpsEnabled() has not been implemented.');
+  }
+
+  Future<bool?> enableLocationServices() {
+    throw UnimplementedError('enableLocationServices() has not been implemented.');
+  }
+
+  Future<bool?> checkWifiEnabled() {
+    throw UnimplementedError('checkWifiEnabled() has not been implemented.');
+  }
+
+  Future<bool?> enableWifiServices() {
+    throw UnimplementedError('enableWifiServices() has not been implemented.');
+  }
 }

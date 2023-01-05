@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,24 +29,15 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   final TextEditingController msgText = TextEditingController();
   final _flutterP2pConnectionPlugin = FlutterP2pConnection();
   List<DiscoveredPeers> peers = [];
-  String myIpAddress = "unkown";
-  WifiP2PInfo wifiP2PInfo = const WifiP2PInfo(
-    groupFormed: false,
-    groupOwnerAddress: null,
-    isConnected: false,
-    isGroupOwner: false,
-    clients: [],
-  );
+  WifiP2PInfo? wifiP2PInfo;
   StreamSubscription<WifiP2PInfo>? _streamWifiInfo;
   StreamSubscription<List<DiscoveredPeers>>? _streamPeers;
-
-  WebSocket? socket;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _register();
+    _init();
   }
 
   @override
@@ -61,15 +50,13 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      print(">>>> pause");
       _flutterP2pConnectionPlugin.register();
     } else if (state == AppLifecycleState.resumed) {
-      print(">>>> resume");
       _flutterP2pConnectionPlugin.unregister();
     }
   }
 
-  void _register() async {
+  void _init() async {
     await _flutterP2pConnectionPlugin.initialize();
     await _flutterP2pConnectionPlugin.register();
     _streamWifiInfo =
@@ -89,64 +76,67 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     });
   }
 
-  Future startServer() async {
-    await _flutterP2pConnectionPlugin.startServer(
-      ip: wifiP2PInfo.groupOwnerAddress!,
-      onStarted: (server) {},
-      onConnect: (socket) {
-        socket = socket;
-      },
-      onRequest: (req) async {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              req,
-            ),
-          ),
-        );
-        print(req);
-      },
-    );
-  }
-
-  Future connectToServer() async {
-    socket = await _flutterP2pConnectionPlugin.connectToServer(
-      ip: wifiP2PInfo.groupOwnerAddress!,
-      onStarted: (address) {},
-      onRequest: (req) async {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              req,
-            ),
-          ),
-        );
-        print(req);
-      },
-    );
-  }
-
-  Future closeConnection() async {
-    if (socket != null) {
-      socket?.close();
-      socket = null;
+  Future startSocket() async {
+    if (wifiP2PInfo != null) {
+      await _flutterP2pConnectionPlugin.startSocket(
+        groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress!,
+        onConnect: (address) {
+          snack("opened a socket at: $address");
+        },
+        onRequest: (req) async {
+          request(req);
+        },
+      );
     }
+  }
+
+  Future connectToSocket() async {
+    if (wifiP2PInfo != null) {
+      await _flutterP2pConnectionPlugin.connectToSocket(
+        groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress!,
+        onConnect: (address) {
+          snack("connected to socket: $address");
+        },
+        onRequest: (req) async {
+          request(req);
+        },
+      );
+    }
+  }
+
+  Future closeSocketConnection() async {
+    bool closed = _flutterP2pConnectionPlugin.closeSocket();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
-          "closed",
+          "closed: $closed",
         ),
       ),
     );
-    setState(() {});
+  }
+
+  void request(dynamic req) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          req,
+        ),
+      ),
+    );
   }
 
   Future sendMessage() async {
-    try {
-      if (socket != null) {
-        socket?.add(msgText.text.trim());
-      }
-    } catch (_) {}
+    _flutterP2pConnectionPlugin.sendStringToSocket(msgText.text);
+  }
+
+  void snack(String msg) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          msg,
+        ),
+      ),
+    );
   }
 
   @override
@@ -161,9 +151,12 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text("IP: ${wifiP2PInfo.groupOwnerAddress}"),
             Text(
-                "connected: ${wifiP2PInfo.isConnected}, isGroupOwner: ${wifiP2PInfo.isGroupOwner}, groupFormed: ${wifiP2PInfo.groupFormed}, groupOwnerAddress: ${wifiP2PInfo.groupOwnerAddress}, clients: ${wifiP2PInfo.clients}"),
+                "IP: ${wifiP2PInfo == null ? "null" : wifiP2PInfo?.groupOwnerAddress}"),
+            wifiP2PInfo != null
+                ? Text(
+                    "connected: ${wifiP2PInfo?.isConnected}, isGroupOwner: ${wifiP2PInfo?.isGroupOwner}, groupFormed: ${wifiP2PInfo?.groupFormed}, groupOwnerAddress: ${wifiP2PInfo?.groupOwnerAddress}, clients: ${wifiP2PInfo?.clients}")
+                : const SizedBox.shrink(),
             const SizedBox(height: 10),
             const Text("PEERS:"),
             SizedBox(
@@ -179,23 +172,38 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                         context: context,
                         builder: (context) => Center(
                           child: AlertDialog(
-                            content: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("name: ${peers[index].deviceName}"),
-                                Text("address: ${peers[index].deviceAddress}"),
-                                Text(
-                                    "isGroupOwner: ${peers[index].isGroupOwner}"),
-                                Text(
-                                    "isServiceDiscoveryCapable: ${peers[index].isServiceDiscoveryCapable}"),
-                                Text(
-                                    "primaryDeviceType: ${peers[index].primaryDeviceType}"),
-                                Text(
-                                    "secondaryDeviceType: ${peers[index].secondaryDeviceType}"),
-                                Text("status: ${peers[index].status}"),
-                              ],
+                            content: SizedBox(
+                              height: 200,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("name: ${peers[index].deviceName}"),
+                                  Text(
+                                      "address: ${peers[index].deviceAddress}"),
+                                  Text(
+                                      "isGroupOwner: ${peers[index].isGroupOwner}"),
+                                  Text(
+                                      "isServiceDiscoveryCapable: ${peers[index].isServiceDiscoveryCapable}"),
+                                  Text(
+                                      "primaryDeviceType: ${peers[index].primaryDeviceType}"),
+                                  Text(
+                                      "secondaryDeviceType: ${peers[index].secondaryDeviceType}"),
+                                  Text("status: ${peers[index].status}"),
+                                ],
+                              ),
                             ),
+                            actions: [
+                              TextButton(
+                                onPressed: () async {
+                                  Navigator.of(context).pop();
+                                  bool? bo = await _flutterP2pConnectionPlugin
+                                      .connect(peers[index].deviceAddress);
+                                  snack("connected: $bo");
+                                },
+                                child: const Text("connect"),
+                              ),
+                            ],
                           ),
                         ),
                       );
@@ -228,29 +236,65 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
             ),
             ElevatedButton(
               onPressed: () async {
-                await Permission.location.request();
-                print(await Permission.location.status);
+                print(
+                    await _flutterP2pConnectionPlugin.askLocationPermission());
               },
               child: const Text("ask location permission"),
             ),
             ElevatedButton(
               onPressed: () async {
+                print(
+                    await _flutterP2pConnectionPlugin.enableLocationServices());
+              },
+              child: const Text("enable location"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                print(await _flutterP2pConnectionPlugin.enableWifiServices());
+              },
+              child: const Text("enable wifi"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
                 bool? created = await _flutterP2pConnectionPlugin.createGroup();
-                print(created);
+                snack("created group: $created");
               },
               child: const Text("create group"),
             ),
             ElevatedButton(
               onPressed: () async {
                 bool? removed = await _flutterP2pConnectionPlugin.removeGroup();
-                print(removed);
+                snack("removed group: $removed");
               },
               child: const Text("remove group/disconnect"),
             ),
             ElevatedButton(
               onPressed: () async {
                 var info = await _flutterP2pConnectionPlugin.groupInfo();
-                print(info);
+                showDialog(
+                  context: context,
+                  builder: (context) => Center(
+                    child: Dialog(
+                      child: SizedBox(
+                        height: 200,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                  "groupNetworkName: ${info?.groupNetworkName}"),
+                              Text("passPhrase: ${info?.passPhrase}"),
+                              Text("isGroupOwner: ${info?.isGroupOwner}"),
+                              Text("clients: ${info?.clients}"),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
               },
               child: const Text("get group info"),
             ),
@@ -258,7 +302,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
               onPressed: () async {
                 bool? discovering =
                     await _flutterP2pConnectionPlugin.discover();
-                print("discovering $discovering");
+                snack("discovering $discovering");
               },
               child: const Text("discover"),
             ),
@@ -266,35 +310,25 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
               onPressed: () async {
                 bool? stopped =
                     await _flutterP2pConnectionPlugin.stopDiscovery();
-                print("stopped $stopped");
+                snack("stopped discovering $stopped");
               },
               child: const Text("stop discovery"),
             ),
             ElevatedButton(
               onPressed: () async {
-                if (peers.isNotEmpty) {
-                  bool? bo = await _flutterP2pConnectionPlugin
-                      .connect(peers.first.deviceAddress);
-                  print(bo);
-                }
-              },
-              child: const Text("connect"),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                startServer();
+                startSocket();
               },
               child: const Text("open a socket"),
             ),
             ElevatedButton(
               onPressed: () async {
-                connectToServer();
+                connectToSocket();
               },
               child: const Text("connect to socket"),
             ),
             ElevatedButton(
               onPressed: () async {
-                closeConnection();
+                closeSocketConnection();
               },
               child: const Text("close socket"),
             ),
@@ -314,21 +348,5 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         ),
       ),
     );
-  }
-}
-
-Future<String?> myLocalIp() async {
-  final interfaces = await NetworkInterface.list(
-    type: InternetAddressType.IPv4,
-    includeLinkLocal: true,
-  );
-  List<NetworkInterface> networkInterface = interfaces
-      .where((e) => e.addresses.first.address.startsWith("192."))
-      .toList();
-  if (networkInterface.isNotEmpty) {
-    String ip = networkInterface.first.addresses.first.address;
-    return ip;
-  } else {
-    return null;
   }
 }

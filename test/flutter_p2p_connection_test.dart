@@ -42,6 +42,27 @@ class MockFlutterP2pConnectionPlatform
 
   @override
   Future<bool?> pause() => Future.value(true);
+
+  @override
+  Future<bool?> checkLocationPermission() => Future.value(true);
+
+  @override
+  Future<bool?> askLocationPermission() => Future.value(true);
+
+  @override
+  Future<bool?> checkLocationEnabled() => Future.value(true);
+
+  @override
+  Future<bool?> checkGpsEnabled() => Future.value(true);
+
+  @override
+  Future<bool?> enableLocationServices() => Future.value(true);
+
+  @override
+  Future<bool?> checkWifiEnabled() => Future.value(true);
+
+  @override
+  Future<bool?> enableWifiServices() => Future.value(true);
 }
 
 void main() {

@@ -1,5 +1,6 @@
 package com.ugo.studio.plugins.flutter_p2p_connection
 
+import android.Manifest
 import android.app.Activity
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
@@ -7,7 +8,10 @@ import android.content.ContentValues.TAG
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.NetworkInfo
+import android.net.wifi.WifiManager
 import android.net.wifi.WpsInfo
 import android.net.wifi.p2p.*
 import android.os.Bundle
@@ -69,72 +73,154 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
       try {
         initializeWifiP2PConnections(result)
       } catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "discover") {
       try {
         discoverWifiPeers(result)
       } catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     }  else if (call.method == "stopDiscovery") {
       try {
         stopDiscoverWifiPeers(result)
       } catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "connect") {
       try {
         val address: String = call.argument("address") ?: ""
         connect(result, address)
       } catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "disconnect") {
       try {
         disconnect(result)
       } catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "createGroup") {
       try {
         createGroup(result)
       }catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "removeGroup") {
       try {
         removeGroup(result)
       }catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "groupInfo") {
       try {
         requestGroupInfo(result)
       }catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "fetchPeers") {
       try {
         fetchPeers(result)
       }catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "resume") {
       try {
         resume(result)
       }catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "pause") {
       try {
         pause(result)
       }catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null);
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "checkLocationPermission") {
+      try {
+        checkLocationPermission(result)
+      }catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "askLocationPermission") {
+      try {
+        askLocationPermission(result)
+      }catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "checkLocationEnabled") {
+      try {
+        checkLocationEnabled(result)
+      }catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "checkGpsEnabled") {
+      try {
+        checkGpsEnabled(result)
+      }catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "enableLocationServices") {
+      try {
+        enableLocationServices(result)
+      }catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "checkWifiEnabled") {
+      try {
+          checkWifiEnabled(result)
+      }catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "enableWifiServices") {
+      try {
+          enableWifiServices(result)
+      }catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
       }
     } else {
       result.notImplemented()
     }
+  }
+
+  fun checkLocationPermission(result: Result) {
+    if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+      && context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+      result.success(true);
+    } else {
+      result.success(false);
+    }
+  }
+
+  fun askLocationPermission(result: Result) {
+    val perms: Array<String> = arrayOf<String>(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION)
+    activity.requestPermissions(perms, 2468)
+    result.success(true)
+  }
+
+  fun checkLocationEnabled(result: Result) {
+    var lm: LocationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    result.success(lm.isLocationEnabled)
+  }
+
+  fun checkGpsEnabled(result: Result) {
+    var lm: LocationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    result.success((lm.isProviderEnabled(LocationManager.GPS_PROVIDER) && lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)))
+  }
+
+  fun enableLocationServices(result: Result) {
+    activity.startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+    result.success(true)
+  }
+
+  fun checkWifiEnabled(result: Result) {
+    var wm: WifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
+    result.success(wm.isWifiEnabled)
+  }
+
+  fun enableWifiServices(result: Result) {
+    activity.startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+    result.success(true)
   }
 
   fun resume(result: Result) {
@@ -251,7 +337,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
         if (clients.length > 0) {
           clients = clients.subSequence(0, clients.length-2).toString()
         }
-        Log.d(TAG, "FlutterP2pConnection: groupInfo={isGroupOwner: \"${group.isGroupOwner}\", passphrase: \"${group.passphrase}\", groupFormed: \"${group.networkName}\", \"clients\": \"${group.clientList.toString()}\"}")
+        Log.d(TAG, "FlutterP2pConnection: groupInfo={isGroupOwner: \"${group.isGroupOwner}\", passphrase: \"${group.passphrase}\", groupNetworkName: \"${group.networkName}\", \"clients\": \"${group.clientList.toString()}\"}")
         result.success("{\"isGroupOwner\": ${group.isGroupOwner}, \"passPhrase\": \"${group.passphrase}\", \"groupNetworkName\": \"${group.networkName}\", \"clients\": [${clients}]}")
       }
     })

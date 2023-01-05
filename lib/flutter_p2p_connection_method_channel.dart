@@ -89,4 +89,46 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
     final pause = await methodChannel.invokeMethod<bool?>("pause");
     return pause;
   }
+
+  @override
+  Future<bool?> checkLocationPermission() async {
+    final res = await methodChannel.invokeMethod<bool?>("checkLocationPermission");
+    return res;
+  }
+
+  @override
+  Future<bool?> askLocationPermission() async {
+    final res = await methodChannel.invokeMethod<bool?>("askLocationPermission");
+    return res;
+  }
+
+  @override
+  Future<bool?> checkLocationEnabled() async {
+    final res = await methodChannel.invokeMethod<bool?>("checkLocationEnabled");
+    return res;
+  }
+
+  @override
+  Future<bool?> checkGpsEnabled() async {
+    final res = await methodChannel.invokeMethod<bool?>("checkGpsEnabled");
+    return res;
+  }
+
+  @override
+  Future<bool?> enableLocationServices() async {
+    final res = await methodChannel.invokeMethod<bool?>("enableLocationServices");
+    return res;
+  }
+
+  @override
+  Future<bool?> checkWifiEnabled() async {
+    final res = await methodChannel.invokeMethod<bool?>("checkWifiEnabled");
+    return res;
+  }
+
+  @override
+  Future<bool?> enableWifiServices() async {
+    final res = await methodChannel.invokeMethod<bool?>("enableWifiServices");
+    return res;
+  }
 }

@@ -1,10 +1,11 @@
 name: flutter_p2p_connection
-description: A p2p wifi direct plugin.
-version: 0.0.1
+description: A WiFi Direct Plugin for Flutter. This Plugin uses the native WiFi P2P API of Android.
+version: 1.0.2
+homepage: https://github.com/ugo-studio/flutter_p2p_connection
 repository: https://github.com/ugo-studio/flutter_p2p_connection
 
 environment:
-  sdk: '>=2.18.4 <3.0.0'
+  sdk: ">=2.18.4 <3.0.0"
   flutter: ">=2.5.0"
 
 dependencies:
