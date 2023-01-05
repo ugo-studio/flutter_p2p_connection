@@ -73,15 +73,18 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
   }
 
   Future<bool?> checkLocationPermission() {
-    throw UnimplementedError('checkLocationPermission() has not been implemented.');
+    throw UnimplementedError(
+        'checkLocationPermission() has not been implemented.');
   }
 
   Future<bool?> askLocationPermission() {
-    throw UnimplementedError('askLocationPermission() has not been implemented.');
+    throw UnimplementedError(
+        'askLocationPermission() has not been implemented.');
   }
 
   Future<bool?> checkLocationEnabled() {
-    throw UnimplementedError('checkLocationEnabled() has not been implemented.');
+    throw UnimplementedError(
+        'checkLocationEnabled() has not been implemented.');
   }
 
   Future<bool?> checkGpsEnabled() {
@@ -89,7 +92,8 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
   }
 
   Future<bool?> enableLocationServices() {
-    throw UnimplementedError('enableLocationServices() has not been implemented.');
+    throw UnimplementedError(
+        'enableLocationServices() has not been implemented.');
   }
 
   Future<bool?> checkWifiEnabled() {
