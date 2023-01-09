@@ -257,7 +257,7 @@ Future connectToSocket() async {
       downloadPath: "/storage/emulated/0/Download/",
       // the max number of downloads at a time. Default is 2.
       maxConcurrentDownloads: 2,
-      // on connect to socket
+      // on connected to socket
       onConnect: (address) {
         print("connected to socket: $address");
       },
