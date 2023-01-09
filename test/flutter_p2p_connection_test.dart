@@ -11,6 +11,9 @@ class MockFlutterP2pConnectionPlatform
   Future<String?> getPlatformVersion() => Future.value('42');
 
   @override
+  Future<String?> getPlatformModel() => Future.value('model');
+
+  @override
   Future<bool?> connect(String address) => Future.value(true);
 
   @override

@@ -1,16 +1,27 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+import 'package:mime_type/mime_type.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'flutter_p2p_connection_platform_interface.dart';
 
 class FlutterP2pConnection {
   final int _port = 4045;
   final int _code = 4045;
-  HttpServer? _server;
+  int _maxDownloads = 2;
+  final String _fileTransferCode = "~~&&^^>><<{|MeSsAgEs|}>><<^^&&~~";
+  final String _groupSeparation = "~~&&^^>><<{||||}>><<^^&&~~";
   final List<WebSocket?> _sockets = [];
+  final List<FutureDownload> _futureDownloads = [];
+  final Dio dio = Dio();
+  String _ipAddress = '';
+  String _as = '';
+  HttpServer? _server;
 
   Future<String?> _myIPAddress() async {
     List<NetworkInterface> interfaces = await NetworkInterface.list(
@@ -197,12 +208,18 @@ class FlutterP2pConnection {
 
   Future<bool> startSocket({
     required String groupOwnerAddress,
-    required void Function(String address) onConnect,
+    required String downloadPath,
+    int maxConcurrentDownloads = 2,
+    required void Function(String, String) onConnect,
+    required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic) onRequest,
   }) async {
+    if (_server != null) return true;
     try {
       closeSocket();
+      _maxDownloads = maxConcurrentDownloads;
       groupOwnerAddress = groupOwnerAddress.replaceFirst("/", "");
+      _ipAddress = groupOwnerAddress;
       HttpServer httpServer = await HttpServer.bind(
         groupOwnerAddress,
         _port,
@@ -214,7 +231,32 @@ class FlutterP2pConnection {
             WebSocket socketServer = await WebSocketTransformer.upgrade(req);
             _sockets.add(socketServer);
             socketServer.listen(
-              onRequest,
+              (event) {
+                // SHARE TO CLIENTS
+                for (WebSocket? socket in _sockets) {
+                  if (socket != null) {
+                    socket.add(event);
+                  }
+                }
+                if (event.toString().startsWith(_fileTransferCode)) {
+                  // ADD TO FUTURE DOWNLOADS
+                  for (String msg in Uri.decodeComponent(event.toString())
+                      .split(_groupSeparation)) {
+                    _futureDownloads.add(
+                      FutureDownload(
+                        url: msg.toString().replaceFirst(_fileTransferCode, ""),
+                        downloading: false,
+                        id: Random().nextInt(10000),
+                      ),
+                    );
+                  }
+                } else {
+                  // RECEIVE MESSAGE
+                  onRequest(event
+                      .toString()
+                      .substring(event.toString().indexOf('@') + 1));
+                }
+              },
               cancelOnError: true,
               onDone: () {
                 debugPrint("FlutterP2pConnection: Closed Socket!");
@@ -223,9 +265,15 @@ class FlutterP2pConnection {
                     (e) => e == null ? true : e.closeCode == _code);
               },
             );
-            onConnect("${httpServer.address.address}:${httpServer.port}");
-            debugPrint("FlutterP2pConnection: A device connected to Socket!");
-          } else if (req.uri.path == '/file') {}
+            onConnect("${req.uri.queryParameters['as']}",
+                "${req.uri.queryParameters['ip']}:$_port");
+            debugPrint(
+                "FlutterP2pConnection: ${req.uri.queryParameters['as']} connected to Socket!");
+
+            // HANDLE FILE REQUEST
+          } else if (req.uri.path == '/file' && req.uri.hasQuery) {
+            _handleFileRequest(req, transferUpdate);
+          }
         },
         cancelOnError: true,
         onError: (error, stack) {},
@@ -235,6 +283,7 @@ class FlutterP2pConnection {
       );
       _server = httpServer;
       debugPrint("FlutterP2pConnection: Opened a Socket!");
+      _listenThenDownload(transferUpdate, downloadPath);
       return true;
     } catch (_) {
       return false;
@@ -243,36 +292,34 @@ class FlutterP2pConnection {
 
   Future<bool> connectToSocket({
     required String groupOwnerAddress,
+    String? as,
+    int maxConcurrentDownloads = 2,
+    required String downloadPath,
     required void Function(String address) onConnect,
+    required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic) onRequest,
   }) async {
+    if (_server != null) return true;
     try {
       closeSocket();
+      _maxDownloads = maxConcurrentDownloads;
+      _ipAddress = (await _myIPAddress()) ?? "0.0.0.0";
+      _as = as ??
+          await FlutterP2pConnectionPlatform.instance.getPlatformModel() ??
+          (Random().nextInt(5000) + 1000).toString();
       if (groupOwnerAddress.isNotEmpty) {
         groupOwnerAddress = groupOwnerAddress.replaceFirst("/", "");
-        WebSocket socket =
-            await WebSocket.connect('ws://$groupOwnerAddress:$_port/ws');
-        _sockets.add(socket);
-        debugPrint(
-            "FlutterP2pConnection: Connected to Socket: $groupOwnerAddress:$_port");
-        socket.listen(
-          onRequest,
-          cancelOnError: true,
-          onDone: () {
-            debugPrint("FlutterP2pConnection: Closed Socket!");
-            socket.close(_code);
-            _sockets
-                .removeWhere((e) => e == null ? true : e.closeCode == _code);
-          },
-        );
         HttpServer httpServer = await HttpServer.bind(
-          (await _myIPAddress()) ?? "0.0.0.0",
+          _ipAddress,
           _port,
           shared: true,
         );
         httpServer.listen(
           (req) async {
-            if (req.uri.path == '/file') {}
+            // HANDLE FILE REQUEST
+            if (req.uri.path == '/file' && req.uri.hasQuery) {
+              _handleFileRequest(req, transferUpdate);
+            }
           },
           cancelOnError: true,
           onError: (error, stack) {},
@@ -281,7 +328,44 @@ class FlutterP2pConnection {
           },
         );
         _server = httpServer;
+        WebSocket socket = await WebSocket.connect(
+            'ws://$groupOwnerAddress:$_port/ws?as=$_as&ip=$_ipAddress');
+        _sockets.add(socket);
+        debugPrint(
+            "FlutterP2pConnection: Connected to Socket: $groupOwnerAddress:$_port");
+        socket.listen(
+          (event) {
+            if (event.toString().startsWith(_fileTransferCode)) {
+              // ADD TO FUTURE DOWNLOADS
+              for (String msg in Uri.decodeComponent(event.toString())
+                  .split(_groupSeparation)) {
+                String url = msg.toString().replaceFirst(_fileTransferCode, "");
+                if (!(Uri.decodeComponent(url)
+                    .startsWith("http://$_ipAddress:$_port/"))) {
+                  _futureDownloads.add(
+                    FutureDownload(
+                      url: url,
+                      downloading: false,
+                      id: Random().nextInt(10000),
+                    ),
+                  );
+                }
+              }
+            } else if (event.toString().split("@").first !=
+                _ipAddress.split(".").last) {
+              // RECEIVE MESSGAE
+              onRequest(event
+                  .toString()
+                  .substring(event.toString().indexOf('@') + 1));
+            }
+          },
+          cancelOnError: true,
+          onDone: () {
+            closeSocket();
+          },
+        );
         onConnect("$groupOwnerAddress:$_port");
+        _listenThenDownload(transferUpdate, downloadPath);
         return true;
       } else {
         return false;
@@ -291,11 +375,252 @@ class FlutterP2pConnection {
     }
   }
 
+  void _listenThenDownload(
+    void Function(TransferUpdate) transferUpdate,
+    String downloadPath,
+  ) async {
+    while (_server != null) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (_futureDownloads.isNotEmpty) {
+        if (_futureDownloads.where((i) => i.downloading == true).isEmpty) {
+          if (_futureDownloads.length <= _maxDownloads) {
+            for (int i = 0; i < _futureDownloads.length; i++) {
+              _futureDownloads[i].downloading = true;
+              FutureDownload download = _futureDownloads[i];
+              _downloadFile(
+                download.url,
+                transferUpdate,
+                downloadPath,
+                () {
+                  _futureDownloads.removeWhere((i) => i.id == download.id);
+                },
+              );
+            }
+          } else {
+            for (int i = 0; i < _maxDownloads; i++) {
+              _futureDownloads[i].downloading = true;
+              FutureDownload download = _futureDownloads[i];
+              _downloadFile(
+                download.url,
+                transferUpdate,
+                downloadPath,
+                () {
+                  _futureDownloads.removeWhere((i) => i.id == download.id);
+                },
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Future _handleFileRequest(
+    HttpRequest req,
+    void Function(TransferUpdate) transferUpdate,
+  ) async {
+    String path = Uri.decodeComponent(req.uri.queryParameters['path'] ?? "");
+    File file = File(path);
+    List m = (mime(path.split("/").last) ?? "text/plain").split("/");
+    String filename = path.split("/").last;
+    int count = 0;
+    try {
+      if (path.isEmpty) {
+        req.response
+          ..addError(const HttpException("not found"))
+          ..close();
+        transferUpdate(
+          TransferUpdate(
+            filename: filename,
+            path: path,
+            count: count,
+            total: await file.length(),
+            completed: true,
+            failed: true,
+            receiving: false,
+          ),
+        );
+      } else {
+        req.response
+          ..headers.contentType = ContentType(m.first, m.last)
+          ..headers.contentLength = await file.length()
+          ..addStream(
+            _fileStream(
+              file: file,
+              filename: filename,
+              transferUpdate: transferUpdate,
+              updateCount: (c) => count = c,
+            ),
+          ).whenComplete(() async {
+            req.response.close();
+            transferUpdate(
+              TransferUpdate(
+                filename: filename,
+                path: path,
+                count: count,
+                total: await file.length(),
+                completed: true,
+                failed: false,
+                receiving: false,
+              ),
+            );
+          });
+      }
+    } catch (_) {
+      req.response
+        ..addError(const HttpException("not found"))
+        ..close();
+      transferUpdate(
+        TransferUpdate(
+          filename: filename,
+          path: path,
+          count: count,
+          total: await file.length(),
+          completed: true,
+          failed: true,
+          receiving: false,
+        ),
+      );
+    }
+  }
+
+  Stream<List<int>> _fileStream({
+    required File file,
+    required String filename,
+    required void Function(TransferUpdate) transferUpdate,
+    required void Function(int) updateCount,
+  }) async* {
+    int total = await file.length();
+    int count = 0;
+    await for (List<int> chip in file.openRead()) {
+      count += (chip as Uint8List).lengthInBytes;
+      updateCount(count);
+      //update transfer
+      transferUpdate(
+        TransferUpdate(
+          filename: filename,
+          path: file.path,
+          count: count,
+          total: total,
+          completed: false,
+          failed: false,
+          receiving: false,
+        ),
+      );
+      yield chip;
+      if (count == total) break;
+    }
+  }
+
+  Future _downloadFile(
+    String url,
+    void Function(TransferUpdate) transferUpdate,
+    String downloadPath,
+    void Function() done,
+  ) async {
+    if (Uri.decodeComponent(url).startsWith("http://$_ipAddress:$_port/")) {
+      done();
+      return;
+    }
+    String filename =
+        await _setName(Uri.decodeComponent(url).split("/").last, downloadPath);
+    int count = 0;
+    int total = 0;
+    try {
+      dio.download(
+        url,
+        "$downloadPath$filename",
+        // deleteOnError: true,
+        onReceiveProgress: (c, t) {
+          count = c;
+          total = t;
+          transferUpdate(
+            TransferUpdate(
+              filename: filename,
+              path: "$downloadPath$filename",
+              count: count,
+              total: total,
+              completed: false,
+              failed: false,
+              receiving: true,
+            ),
+          );
+        },
+      ).whenComplete(
+        () {
+          transferUpdate(
+            TransferUpdate(
+              filename: filename,
+              path: "$downloadPath$filename",
+              count: count,
+              total: total,
+              completed: true,
+              failed: false,
+              receiving: true,
+            ),
+          );
+          done();
+        },
+      );
+    } catch (_) {
+      transferUpdate(
+        TransferUpdate(
+          filename: filename,
+          path: "$downloadPath$filename",
+          count: count,
+          total: total,
+          completed: true,
+          failed: true,
+          receiving: true,
+        ),
+      );
+      done();
+    }
+  }
+
+  Future<String> _setName(String name, String path) async {
+    try {
+      if (!(await File(path + name).exists())) return name;
+      int number = 1;
+      String ext = name.substring(name.lastIndexOf("."));
+      while (true) {
+        String newName = name.replaceFirst(ext, "($number)$ext");
+        if (!(await File(path + newName).exists())) return newName;
+        number++;
+      }
+    } catch (_) {
+      return name;
+    }
+  }
+
   bool sendStringToSocket(String string) {
     try {
       for (WebSocket? socket in _sockets) {
         if (socket != null) {
-          socket.add(string);
+          socket.add("${_ipAddress.split(".").last}@$string");
+        }
+      }
+      return true;
+    } catch (e) {
+      debugPrint("FlutterP2pConnection: Tranfer error: $e");
+      return false;
+    }
+  }
+
+  Future<bool> sendFiletoSocket(List<String> paths) async {
+    try {
+      List<String> donotexist =
+          paths.where((path) => (File(path).existsSync()) == false).toList();
+      if (donotexist.isNotEmpty) return false;
+      for (WebSocket? socket in _sockets) {
+        if (socket != null) {
+          String msg = '';
+          for (int i = 0; i < paths.length; i++) {
+            msg +=
+                "${_fileTransferCode}http://$_ipAddress:$_port/file?path=${Uri.encodeComponent(paths[i])}";
+            if (i < paths.length - 1) msg += _groupSeparation;
+          }
+          socket.add(msg);
         }
       }
       return true;
@@ -313,7 +638,12 @@ class FlutterP2pConnection {
           socket.close(_code);
         }
       }
+      _server = null;
       _sockets.clear();
+      _futureDownloads.clear();
+      _ipAddress = '';
+      _as = '';
+      debugPrint("FlutterP2pConnection: Closed Socket!");
       return true;
     } catch (_) {
       return false;
@@ -325,21 +655,18 @@ class FlutterP2pConnection {
   }
 
   Future<bool?> askLocationPermission() async {
-    if (await FlutterP2pConnectionPlatform.instance.checkLocationPermission() ==
-        false) {
-      return FlutterP2pConnectionPlatform.instance.askLocationPermission();
-    } else {
-      return true;
-    }
+    PermissionStatus status = await Permission.location.request();
+    if (status.isGranted) return true;
+    return false;
   }
 
   Future<bool?> checkLocationEnabled() {
     return FlutterP2pConnectionPlatform.instance.checkLocationEnabled();
   }
 
-  Future<bool?> checkGpsEnabled() {
-    return FlutterP2pConnectionPlatform.instance.checkGpsEnabled();
-  }
+  // Future<bool?> checkGpsEnabled() {
+  //   return FlutterP2pConnectionPlatform.instance.checkGpsEnabled();
+  // }
 
   Future<bool?> enableLocationServices() {
     return FlutterP2pConnectionPlatform.instance.enableLocationServices();
@@ -351,6 +678,30 @@ class FlutterP2pConnection {
 
   Future<bool?> enableWifiServices() {
     return FlutterP2pConnectionPlatform.instance.enableWifiServices();
+  }
+
+  Future<bool?> checkStoragePermission() async {
+    PermissionStatus status = await Permission.storage.status;
+    if (status.isGranted) return true;
+    return false;
+  }
+
+  Future<bool?> askStoragePermission() async {
+    PermissionStatus status = await Permission.storage.request();
+    if (status.isGranted) return true;
+    return false;
+  }
+
+  Future<bool?> askStorageAndLocationPermission() async {
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.location,
+      Permission.storage,
+    ].request();
+    if ((statuses[Permission.location] as PermissionStatus).isGranted &&
+        (statuses[Permission.storage] as PermissionStatus).isGranted) {
+      return true;
+    }
+    return false;
   }
 }
 
@@ -417,5 +768,35 @@ class WifiP2PInfo {
     required this.groupOwnerAddress,
     required this.groupFormed,
     required this.clients,
+  });
+}
+
+class TransferUpdate {
+  final String filename;
+  final String path;
+  final int count;
+  final int total;
+  final bool completed;
+  final bool failed;
+  final bool receiving;
+  TransferUpdate({
+    required this.filename,
+    required this.path,
+    required this.count,
+    required this.total,
+    required this.completed,
+    required this.failed,
+    required this.receiving,
+  });
+}
+
+class FutureDownload {
+  String url;
+  bool downloading;
+  int id;
+  FutureDownload({
+    required this.url,
+    required this.downloading,
+    required this.id,
   });
 }

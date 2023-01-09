@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 
@@ -50,9 +53,11 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      _flutterP2pConnectionPlugin.register();
-    } else if (state == AppLifecycleState.resumed) {
       _flutterP2pConnectionPlugin.unregister();
+      debugPrint(">>> PAUSE");
+    } else if (state == AppLifecycleState.resumed) {
+      _flutterP2pConnectionPlugin.register();
+      debugPrint(">>> RESUME");
     }
   }
 
@@ -80,8 +85,18 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     if (wifiP2PInfo != null) {
       await _flutterP2pConnectionPlugin.startSocket(
         groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress!,
-        onConnect: (address) {
-          snack("opened a socket at: $address");
+        downloadPath: "/storage/emulated/0/Download/",
+        maxConcurrentDownloads: 2,
+        onConnect: (name, address) {
+          snack("$name connected to socket with address: $address");
+        },
+        transferUpdate: (transfer) {
+          if (transfer.completed) {
+            snack(
+                "${transfer.receiving == true ? "received" : "sent"}: ${transfer.filename}");
+          }
+          print(
+              "FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
         },
         onRequest: (req) async {
           request(req);
@@ -94,8 +109,18 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     if (wifiP2PInfo != null) {
       await _flutterP2pConnectionPlugin.connectToSocket(
         groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress!,
+        downloadPath: "/storage/emulated/0/Download/",
+        maxConcurrentDownloads: 2,
         onConnect: (address) {
           snack("connected to socket: $address");
+        },
+        transferUpdate: (transfer) {
+          if (transfer.completed) {
+            snack(
+                "${transfer.receiving == true ? "received" : "sent"}: ${transfer.filename}");
+          }
+          print(
+              "FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
         },
         onRequest: (req) async {
           request(req);
@@ -127,6 +152,26 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 
   Future sendMessage() async {
     _flutterP2pConnectionPlugin.sendStringToSocket(msgText.text);
+  }
+
+  Future sendFile() async {
+    String? filePath = await FilesystemPicker.open(
+      context: context,
+      rootDirectory: Directory("/storage/emulated/0/"),
+      fsType: FilesystemType.file,
+      fileTileSelectMode: FileTileSelectMode.wholeTile,
+      showGoUp: true,
+    );
+    if (filePath == null) return;
+    bool sent = await _flutterP2pConnectionPlugin.sendFiletoSocket(
+      [
+        filePath,
+        // "/storage/emulated/0/Download/Likee_7100105253123033459.mp4",
+        // "/storage/emulated/0/Download/Get started _ Socket.IO.html",
+        // "/storage/emulated/0/Download/03 Omah Lay - Godly (NetNaija.com).mp3",
+      ],
+    );
+    print(sent);
   }
 
   void snack(String msg) async {
@@ -243,6 +288,12 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
             ),
             ElevatedButton(
               onPressed: () async {
+                print(await _flutterP2pConnectionPlugin.askStoragePermission());
+              },
+              child: const Text("ask storage permission"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
                 print(
                     await _flutterP2pConnectionPlugin.enableLocationServices());
               },
@@ -343,6 +394,12 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                 sendMessage();
               },
               child: const Text("send msg"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                sendFile();
+              },
+              child: const Text("send File"),
             ),
           ],
         ),

@@ -3,6 +3,7 @@ package com.ugo.studio.plugins.flutter_p2p_connection
 import android.Manifest
 import android.app.Activity
 import android.annotation.SuppressLint
+import android.app.Application.ActivityLifecycleCallbacks
 import android.content.BroadcastReceiver
 import android.content.ContentValues.TAG
 import android.content.Context
@@ -47,8 +48,6 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
   var receiver: BroadcastReceiver? = null
   var EfoundPeers: MutableList<String> = mutableListOf()
   private lateinit var CfoundPeers: EventChannel
-  var EwifiP2pStateEnabled: Boolean = false;
-  private lateinit var CwifiP2pStateEnabled: EventChannel
   var EnetworkInfo: NetworkInfo? = null
   var EwifiP2pInfo: WifiP2pInfo? = null
   private lateinit var CConnectedPeers: EventChannel
@@ -60,8 +59,6 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     channel.setMethodCallHandler(this)
     CfoundPeers = EventChannel(flutterPluginBinding.binaryMessenger, "flutter_p2p_connection_foundPeers")
     CfoundPeers.setStreamHandler(FoundPeersHandler)
-    CwifiP2pStateEnabled = EventChannel(flutterPluginBinding.binaryMessenger, "flutter_p2p_connection_wifiState")
-    CwifiP2pStateEnabled.setStreamHandler(WifiP2pStateHandler)
     CConnectedPeers = EventChannel(flutterPluginBinding.binaryMessenger, "flutter_p2p_connection_connectedPeers")
     CConnectedPeers.setStreamHandler(ConnectedPeersHandler)
   }
@@ -69,6 +66,8 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
     if (call.method == "getPlatformVersion") {
       result.success("Android: ${android.os.Build.VERSION.RELEASE}")
+    } else if (call.method == "getPlatformModel") {
+      result.success("model: ${android.os.Build.MODEL}")
     } else if (call.method == "initialize") {
       try {
         initializeWifiP2PConnections(result)
@@ -236,12 +235,10 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
             when (state) {
               WifiP2pManager.WIFI_P2P_STATE_ENABLED -> {
                 // Wifi P2P is enabled
-                EwifiP2pStateEnabled = true
                 Log.d(TAG, "FlutterP2pConnection: state enabled, Int=${state}")
               }
               else -> {
                 // Wi-Fi P2P is not enabled
-                EwifiP2pStateEnabled = false
                 Log.d(TAG, "FlutterP2pConnection: state disabled, Int=${state}")
               }
             }
@@ -285,7 +282,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
 
   fun pause(result: Result) {
     context.unregisterReceiver(receiver)
-    Log.d(TAG, "FlutterP2pConnection: paused wifi p2p connection receiver")
+    //Log.d(TAG, "FlutterP2pConnection: paused wifi p2p connection receiver")
     result.success(true)
   }
 
@@ -437,28 +434,6 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     }
   }
 
-  val WifiP2pStateHandler = object : EventChannel.StreamHandler {
-    private var handler: Handler = Handler(Looper.getMainLooper())
-    private var eventSink: EventChannel.EventSink? = null
-
-    @SuppressLint("SimpleDateFormat")
-    override fun onListen(p0: Any?, sink: EventChannel.EventSink) {
-      eventSink = sink
-      val r: Runnable = object : Runnable {
-        override fun run() {
-          handler.post {
-            eventSink?.success(EwifiP2pStateEnabled)
-          }
-          handler.postDelayed(this, 1000)
-        }
-      }
-      handler.postDelayed(r, 1000)
-    }
-    override fun onCancel(p0: Any?) {
-      eventSink = null
-    }
-  }
-
   val ConnectedPeersHandler = object : EventChannel.StreamHandler {
     private var handler: Handler = Handler(Looper.getMainLooper())
     private var eventSink: EventChannel.EventSink? = null
@@ -494,7 +469,6 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
     CfoundPeers.setStreamHandler(null)
-    CwifiP2pStateEnabled.setStreamHandler(null)
     CConnectedPeers.setStreamHandler(null)
   }
 
@@ -502,7 +476,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
      TODO("Not yet implemented")
    }
    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
-     TODO("Not yet implemented")
+     activity = binding.activity
    }
    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
      activity = binding.activity

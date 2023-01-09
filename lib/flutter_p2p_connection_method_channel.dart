@@ -17,6 +17,14 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   }
 
   @override
+  Future<String?> getPlatformModel() async {
+    final version =
+        await methodChannel.invokeMethod<String>('getPlatformModel');
+    if (version == null) return null;
+    return version.replaceFirst("model: ", "");
+  }
+
+  @override
   Future<bool?> initialize() async {
     final initialized = await methodChannel.invokeMethod<bool?>("initialize");
     return initialized;

@@ -13,3 +13,7 @@
 ## 1.0.3
 
 - format
+
+## 1.0.4
+
+- implement file share

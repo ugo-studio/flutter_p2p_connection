@@ -28,8 +28,12 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     throw UnimplementedError('platformVersion() has not been implemented.');
   }
 
+  Future<String?> getPlatformModel() {
+    throw UnimplementedError('getPlatformModel() has not been implemented.');
+  }
+
   Future<bool?> initialize() {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+    throw UnimplementedError('initialize() has not been implemented.');
   }
 
   Future<bool?> discover() {
