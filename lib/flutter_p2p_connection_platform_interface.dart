@@ -86,7 +86,7 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
         'askLocationPermission() has not been implemented.');
   }
 
-  Future<bool?> checkLocationEnabled() {
+  Future<String?> checkLocationEnabled() {
     throw UnimplementedError(
         'checkLocationEnabled() has not been implemented.');
   }

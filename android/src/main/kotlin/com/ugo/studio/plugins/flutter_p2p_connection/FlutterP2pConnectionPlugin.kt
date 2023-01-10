@@ -199,12 +199,12 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
 
   fun checkLocationEnabled(result: Result) {
     var lm: LocationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    result.success(lm.isLocationEnabled)
+    result.success("${lm.isProviderEnabled(LocationManager.GPS_PROVIDER)}:${lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)}")
   }
 
   fun checkGpsEnabled(result: Result) {
     var lm: LocationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    result.success((lm.isProviderEnabled(LocationManager.GPS_PROVIDER) && lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)))
+    result.success(lm.isProviderEnabled(LocationManager.GPS_PROVIDER) && lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
   }
 
   fun enableLocationServices(result: Result) {

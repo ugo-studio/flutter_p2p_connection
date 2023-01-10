@@ -84,9 +84,10 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   Future startSocket() async {
     if (wifiP2PInfo != null) {
       await _flutterP2pConnectionPlugin.startSocket(
-        groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress!,
+        groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress,
         downloadPath: "/storage/emulated/0/Download/",
         maxConcurrentDownloads: 2,
+        deleteOnError: true,
         onConnect: (name, address) {
           snack("$name connected to socket with address: $address");
         },
@@ -108,9 +109,10 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   Future connectToSocket() async {
     if (wifiP2PInfo != null) {
       await _flutterP2pConnectionPlugin.connectToSocket(
-        groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress!,
+        groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress,
         downloadPath: "/storage/emulated/0/Download/",
         maxConcurrentDownloads: 2,
+        deleteOnError: true,
         onConnect: (address) {
           snack("connected to socket: $address");
         },
@@ -177,6 +179,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   void snack(String msg) async {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        duration: const Duration(seconds: 2),
         content: Text(
           msg,
         ),
@@ -278,6 +281,22 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                   ),
                 ),
               ),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                snack((await _flutterP2pConnectionPlugin.checkLocationEnabled())
+                    ? "enabled"
+                    : "diabled");
+              },
+              child: const Text("check location enabled"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                snack((await _flutterP2pConnectionPlugin.checkWifiEnabled())
+                    ? "enabled"
+                    : "diabled");
+              },
+              child: const Text("check wifi enabled"),
             ),
             ElevatedButton(
               onPressed: () async {

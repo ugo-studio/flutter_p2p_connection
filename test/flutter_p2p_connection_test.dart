@@ -53,7 +53,7 @@ class MockFlutterP2pConnectionPlatform
   Future<bool?> askLocationPermission() => Future.value(true);
 
   @override
-  Future<bool?> checkLocationEnabled() => Future.value(true);
+  Future<String?> checkLocationEnabled() => Future.value("true");
 
   @override
   Future<bool?> checkGpsEnabled() => Future.value(true);

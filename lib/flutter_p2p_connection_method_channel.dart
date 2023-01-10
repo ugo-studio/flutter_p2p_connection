@@ -113,8 +113,9 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   }
 
   @override
-  Future<bool?> checkLocationEnabled() async {
-    final res = await methodChannel.invokeMethod<bool?>("checkLocationEnabled");
+  Future<String?> checkLocationEnabled() async {
+    final res =
+        await methodChannel.invokeMethod<String?>("checkLocationEnabled");
     return res;
   }
 

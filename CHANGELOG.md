@@ -17,3 +17,7 @@
 ## 1.0.4
 
 - implement file share
+
+## 1.0.5
+
+- fix location permission issues

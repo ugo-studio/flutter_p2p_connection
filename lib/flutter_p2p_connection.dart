@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mime_type/mime_type.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -19,6 +19,7 @@ class FlutterP2pConnection {
   final List<WebSocket?> _sockets = [];
   final List<FutureDownload> _futureDownloads = [];
   final Dio dio = Dio();
+  bool _deleteOnError = false;
   String _ipAddress = '';
   String _as = '';
   HttpServer? _server;
@@ -43,20 +44,37 @@ class FlutterP2pConnection {
     return FlutterP2pConnectionPlatform.instance.getPlatformVersion();
   }
 
-  Future<bool?> initialize() {
-    return FlutterP2pConnectionPlatform.instance.initialize();
+  Future<bool> initialize() async {
+    if ((await FlutterP2pConnectionPlatform.instance.initialize()) == true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> discover() {
-    return FlutterP2pConnectionPlatform.instance.discover();
+  Future<bool> discover() async {
+    if ((await FlutterP2pConnectionPlatform.instance.discover()) == true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> stopDiscovery() {
-    return FlutterP2pConnectionPlatform.instance.stopDiscovery();
+  Future<bool> stopDiscovery() async {
+    if ((await FlutterP2pConnectionPlatform.instance.stopDiscovery()) == true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> connect(String address) {
-    return FlutterP2pConnectionPlatform.instance.connect(address);
+  Future<bool> connect(String address) async {
+    if ((await FlutterP2pConnectionPlatform.instance.connect(address)) ==
+        true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
   // Future<bool?> disconnect() {
@@ -119,7 +137,7 @@ class FlutterP2pConnection {
         return const WifiP2PInfo(
           isConnected: false,
           isGroupOwner: false,
-          groupOwnerAddress: null,
+          groupOwnerAddress: "",
           groupFormed: false,
           clients: [],
         );
@@ -141,10 +159,22 @@ class FlutterP2pConnection {
             ));
           }
         }
+        bool isConnected = false;
+        if (json["isGroupOwner"] == true) {
+          if (json["isConnected"] == true && clients.isNotEmpty) {
+            isConnected = true;
+          } else {
+            isConnected = false;
+          }
+        } else {
+          isConnected = json["isConnected"];
+        }
         return WifiP2PInfo(
-          isConnected: json["isConnected"],
+          isConnected: isConnected,
           isGroupOwner: json["isGroupOwner"],
-          groupOwnerAddress: json["groupOwnerAddress"],
+          groupOwnerAddress: json["groupOwnerAddress"] == "null"
+              ? ""
+              : json["groupOwnerAddress"],
           groupFormed: json["groupFormed"],
           clients: clients,
         );
@@ -152,7 +182,7 @@ class FlutterP2pConnection {
         return const WifiP2PInfo(
           isConnected: false,
           isGroupOwner: false,
-          groupOwnerAddress: null,
+          groupOwnerAddress: "",
           groupFormed: false,
           clients: [],
         );
@@ -160,20 +190,36 @@ class FlutterP2pConnection {
     });
   }
 
-  Future<bool?> register() {
-    return FlutterP2pConnectionPlatform.instance.resume();
+  Future<bool> register() async {
+    if ((await FlutterP2pConnectionPlatform.instance.resume()) == true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> unregister() {
-    return FlutterP2pConnectionPlatform.instance.pause();
+  Future<bool> unregister() async {
+    if ((await FlutterP2pConnectionPlatform.instance.pause()) == true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> createGroup() {
-    return FlutterP2pConnectionPlatform.instance.createGroup();
+  Future<bool> createGroup() async {
+    if ((await FlutterP2pConnectionPlatform.instance.createGroup()) == true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> removeGroup() {
-    return FlutterP2pConnectionPlatform.instance.removeGroup();
+  Future<bool> removeGroup() async {
+    if ((await FlutterP2pConnectionPlatform.instance.removeGroup()) == true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
   Future<WifiP2PGroupInfo?> groupInfo() async {
@@ -210,14 +256,17 @@ class FlutterP2pConnection {
     required String groupOwnerAddress,
     required String downloadPath,
     int maxConcurrentDownloads = 2,
+    bool deleteOnError = false,
     required void Function(String, String) onConnect,
     required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic) onRequest,
   }) async {
+    if (groupOwnerAddress.isEmpty) return false;
     if (_server != null) return true;
     try {
       closeSocket();
       _maxDownloads = maxConcurrentDownloads;
+      _deleteOnError = deleteOnError;
       groupOwnerAddress = groupOwnerAddress.replaceFirst("/", "");
       _ipAddress = groupOwnerAddress;
       HttpServer httpServer = await HttpServer.bind(
@@ -294,15 +343,18 @@ class FlutterP2pConnection {
     required String groupOwnerAddress,
     String? as,
     int maxConcurrentDownloads = 2,
+    bool deleteOnError = false,
     required String downloadPath,
     required void Function(String address) onConnect,
     required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic) onRequest,
   }) async {
+    if (groupOwnerAddress.isEmpty) return false;
     if (_server != null) return true;
     try {
       closeSocket();
       _maxDownloads = maxConcurrentDownloads;
+      _deleteOnError = deleteOnError;
       _ipAddress = (await _myIPAddress()) ?? "0.0.0.0";
       _as = as ??
           await FlutterP2pConnectionPlatform.instance.getPlatformModel() ??
@@ -460,7 +512,7 @@ class FlutterP2pConnection {
                 count: count,
                 total: await file.length(),
                 completed: true,
-                failed: false,
+                failed: count == await file.length() ? false : true,
                 receiving: false,
               ),
             );
@@ -526,11 +578,12 @@ class FlutterP2pConnection {
         await _setName(Uri.decodeComponent(url).split("/").last, downloadPath);
     int count = 0;
     int total = 0;
+    bool failed = false;
     try {
       dio.download(
         url,
         "$downloadPath$filename",
-        // deleteOnError: true,
+        deleteOnError: _deleteOnError,
         onReceiveProgress: (c, t) {
           count = c;
           total = t;
@@ -546,22 +599,28 @@ class FlutterP2pConnection {
             ),
           );
         },
-      ).whenComplete(
-        () {
-          transferUpdate(
-            TransferUpdate(
-              filename: filename,
-              path: "$downloadPath$filename",
-              count: count,
-              total: total,
-              completed: true,
-              failed: false,
-              receiving: true,
-            ),
-          );
-          done();
-        },
-      );
+      )
+        ..onError((error, stackTrace) async {
+          failed = true;
+          return Future.value(
+              Response(requestOptions: RequestOptions(path: url)));
+        })
+        ..whenComplete(
+          () {
+            transferUpdate(
+              TransferUpdate(
+                filename: filename,
+                path: "$downloadPath$filename",
+                count: count,
+                total: total,
+                completed: true,
+                failed: failed,
+                receiving: true,
+              ),
+            );
+            done();
+          },
+        );
     } catch (_) {
       transferUpdate(
         TransferUpdate(
@@ -570,7 +629,7 @@ class FlutterP2pConnection {
           count: count,
           total: total,
           completed: true,
-          failed: true,
+          failed: failed,
           receiving: true,
         ),
       );
@@ -650,49 +709,83 @@ class FlutterP2pConnection {
     }
   }
 
-  Future<bool?> checkLocationPermission() {
-    return FlutterP2pConnectionPlatform.instance.checkLocationPermission();
+  Future<bool> checkLocationPermission() async {
+    if ((await FlutterP2pConnectionPlatform.instance
+            .checkLocationPermission()) ==
+        true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> askLocationPermission() async {
+  Future<bool> askLocationPermission() async {
     PermissionStatus status = await Permission.location.request();
     if (status.isGranted) return true;
     return false;
   }
 
-  Future<bool?> checkLocationEnabled() {
-    return FlutterP2pConnectionPlatform.instance.checkLocationEnabled();
+  Future<bool> checkLocationEnabled() async {
+    String? l =
+        await FlutterP2pConnectionPlatform.instance.checkLocationEnabled();
+    if (l == null) return false;
+    if (l.split(":").first == "true" && l.split(":").last == "true") {
+      return true;
+    }
+    if (l.split(":").last == "true") return true;
+    return false;
   }
 
-  // Future<bool?> checkGpsEnabled() {
-  //   return FlutterP2pConnectionPlatform.instance.checkGpsEnabled();
-  // }
-
-  Future<bool?> enableLocationServices() {
-    return FlutterP2pConnectionPlatform.instance.enableLocationServices();
+  Future<bool> checkGpsEnabled() async {
+    if ((await FlutterP2pConnectionPlatform.instance.checkGpsEnabled()) ==
+        true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> checkWifiEnabled() {
-    return FlutterP2pConnectionPlatform.instance.checkWifiEnabled();
+  Future<bool> enableLocationServices() async {
+    if ((await FlutterP2pConnectionPlatform.instance
+            .enableLocationServices()) ==
+        true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> enableWifiServices() {
-    return FlutterP2pConnectionPlatform.instance.enableWifiServices();
+  Future<bool> checkWifiEnabled() async {
+    if ((await FlutterP2pConnectionPlatform.instance.checkWifiEnabled()) ==
+        true) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  Future<bool?> checkStoragePermission() async {
+  Future<bool> enableWifiServices() async {
+    if ((await FlutterP2pConnectionPlatform.instance.enableWifiServices()) ==
+        true) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  Future<bool> checkStoragePermission() async {
     PermissionStatus status = await Permission.storage.status;
     if (status.isGranted) return true;
     return false;
   }
 
-  Future<bool?> askStoragePermission() async {
+  Future<bool> askStoragePermission() async {
     PermissionStatus status = await Permission.storage.request();
     if (status.isGranted) return true;
     return false;
   }
 
-  Future<bool?> askStorageAndLocationPermission() async {
+  Future<bool> askStorageAndLocationPermission() async {
     Map<Permission, PermissionStatus> statuses = await [
       Permission.location,
       Permission.storage,
@@ -759,7 +852,7 @@ class WifiP2PGroupInfo {
 class WifiP2PInfo {
   final bool isConnected;
   final bool isGroupOwner;
-  final String? groupOwnerAddress;
+  final String groupOwnerAddress;
   final bool groupFormed;
   final List<Client> clients;
   const WifiP2PInfo({

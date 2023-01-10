@@ -24,7 +24,7 @@ Add these permissions to AndroidManifest.xml
 Add this for android 10:
 
 ```xml
-<!-- add this to your AndroidManifest application tag -->
+<!-- add this to your AndroidManifest file application tag -->
    <application
         ...
         android:requestLegacyExternalStorage="true">
@@ -97,7 +97,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     await _flutterP2pConnectionPlugin.initialize();
     await _flutterP2pConnectionPlugin.register();
     _streamWifiInfo = _flutterP2pConnectionPlugin.streamWifiP2PInfo().listen((event) {
-        // Handle changes of the connection
+        // Handle changes in connection
     });
     _streamPeers = _flutterP2pConnectionPlugin.streamPeers().listen((event) {
         // Handle discovered peers
@@ -139,18 +139,15 @@ final _flutterP2pConnectionPlugin = FlutterP2pConnection();
 List<DiscoveredPeers> peers = [];
 
 void _init() async {
-
-  /// ...
-
+  ...
   _streamPeers = _flutterP2pConnectionPlugin.streamPeers().listen((event) {
+    // handle discovered peers
     if (peers != event) {
         setState(() {
             peers = event;
         });
     }
   });
-
-  /// ...
 }
 
 void discover() {
@@ -172,17 +169,15 @@ final _flutterP2pConnectionPlugin = FlutterP2pConnection();
  List<DiscoveredPeers> peers = [];
 
  void _init() async {
-    // ...
-
     _streamWifiInfo = _flutterP2pConnectionPlugin.streamWifiP2PInfo().listen((event) {
-        if (wifiP2PInfo != event) {
-            setState(() {
-                wifiP2PInfo = event;
-            });
-        }
+      // Handle changes in connection
+      if (wifiP2PInfo != event) {
+          setState(() {
+              wifiP2PInfo = event;
+          });
+      }
     });
-
-    // ...
+    ...
   }
 
   void connect() async {
@@ -221,6 +216,8 @@ Future startSocket() async {
       downloadPath: "/storage/emulated/0/Download/",
       // the max number of downloads at a time. Default is 2.
       maxConcurrentDownloads: 2,
+      // delete incomplete transfered file
+      deleteOnError: true,
       // handle connections to socket
       onConnect: (name, address) {
         print("$name connected to socket with address: $address");
@@ -257,6 +254,8 @@ Future connectToSocket() async {
       downloadPath: "/storage/emulated/0/Download/",
       // the max number of downloads at a time. Default is 2.
       maxConcurrentDownloads: 2,
+      // delete incomplete transfered file
+      deleteOnError: true,
       // on connected to socket
       onConnect: (address) {
         print("connected to socket: $address");
@@ -281,24 +280,21 @@ Future connectToSocket() async {
 To transfer String:
 
 ```dart
-final _flutterP2pConnectionPlugin = FlutterP2pConnection();
-
 _flutterP2pConnectionPlugin.sendStringToSocket("message");
+
 ```
 
 To transfer file:
 
 ```dart
-final _flutterP2pConnectionPlugin = FlutterP2pConnection();
-
 _flutterP2pConnectionPlugin.sendFiletoSocket(["filePath1","filePath2","filePath3"]);
 // Transfered files will be stored in the downloadPath you gave in the `startSocket` or `connectToSocket` method.
+
 ```
 
 To close socket call:
 
 ```dart
-final _flutterP2pConnectionPlugin = FlutterP2pConnection();
-
 _flutterP2pConnectionPlugin.closeSocket();
+
 ```
