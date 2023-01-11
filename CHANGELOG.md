@@ -21,3 +21,7 @@
 ## 1.0.5
 
 - fix location permission issues
+
+## 1.0.6
+
+- fix stream subscription issues

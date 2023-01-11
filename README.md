@@ -97,10 +97,10 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     await _flutterP2pConnectionPlugin.initialize();
     await _flutterP2pConnectionPlugin.register();
     _streamWifiInfo = _flutterP2pConnectionPlugin.streamWifiP2PInfo().listen((event) {
-        // Handle changes in connection
+      // Handle changes in connection
     });
     _streamPeers = _flutterP2pConnectionPlugin.streamPeers().listen((event) {
-        // Handle discovered peers
+      // Handle discovered peers
     });
   }
 }
@@ -142,11 +142,9 @@ void _init() async {
   ...
   _streamPeers = _flutterP2pConnectionPlugin.streamPeers().listen((event) {
     // handle discovered peers
-    if (peers != event) {
-        setState(() {
-            peers = event;
-        });
-    }
+    setState(() {
+      peers = event;
+    });
   });
 }
 
@@ -171,11 +169,9 @@ final _flutterP2pConnectionPlugin = FlutterP2pConnection();
  void _init() async {
     _streamWifiInfo = _flutterP2pConnectionPlugin.streamWifiP2PInfo().listen((event) {
       // Handle changes in connection
-      if (wifiP2PInfo != event) {
-          setState(() {
-              wifiP2PInfo = event;
-          });
-      }
+      setState(() {
+        wifiP2PInfo = event;
+      });
     });
     ...
   }
@@ -228,7 +224,7 @@ Future startSocket() async {
         // transfer.total is the file size in bytes
         // if transfer.receiving is true, you are receiving the file, else you're sending the file.
         print(
-            "FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
+            "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
       },
       // handle string transfer from server
       onRequest: (req) async {
@@ -266,7 +262,7 @@ Future connectToSocket() async {
         // transfer.total is the file size in bytes
         // if transfer.receiving is true, you are receiving the file, else you're sending the file.
         print(
-            "FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
+            "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
       },
       // handle string transfer from server
       onRequest: (req) async {
@@ -278,6 +274,7 @@ Future connectToSocket() async {
 ```
 
 To transfer String:
+This method returns a bool.
 
 ```dart
 _flutterP2pConnectionPlugin.sendStringToSocket("message");
@@ -285,9 +282,10 @@ _flutterP2pConnectionPlugin.sendStringToSocket("message");
 ```
 
 To transfer file:
+This method returns a list of transferUpdates. if it returns `null`, the transfer failed!
 
 ```dart
-_flutterP2pConnectionPlugin.sendFiletoSocket(["filePath1","filePath2","filePath3"]);
+List<TransferUpdate>? id = _flutterP2pConnectionPlugin.sendFiletoSocket(["filePath1","filePath2","filePath3"]);
 // Transfered files will be stored in the downloadPath you gave in the `startSocket` or `connectToSocket` method.
 
 ```

@@ -264,7 +264,7 @@ class FlutterP2pConnection {
     if (groupOwnerAddress.isEmpty) return false;
     if (_server != null) return true;
     try {
-      closeSocket();
+      closeSocket(notify: false);
       _maxDownloads = maxConcurrentDownloads;
       _deleteOnError = deleteOnError;
       groupOwnerAddress = groupOwnerAddress.replaceFirst("/", "");
@@ -280,7 +280,7 @@ class FlutterP2pConnection {
             WebSocket socketServer = await WebSocketTransformer.upgrade(req);
             _sockets.add(socketServer);
             socketServer.listen(
-              (event) {
+              (event) async {
                 // SHARE TO CLIENTS
                 for (WebSocket? socket in _sockets) {
                   if (socket != null) {
@@ -291,11 +291,38 @@ class FlutterP2pConnection {
                   // ADD TO FUTURE DOWNLOADS
                   for (String msg in Uri.decodeComponent(event.toString())
                       .split(_groupSeparation)) {
+                    String url =
+                        msg.toString().replaceFirst(_fileTransferCode, "");
+                    String decodedUrl = Uri.decodeComponent(url);
+                    int id = int.tryParse(decodedUrl.split("&id=").last) ??
+                        Random().nextInt(10000);
+                    String filename = await _setName(
+                        decodedUrl.split("/").last.replaceFirst(
+                            "&id=${decodedUrl.split("&id=").last}", ""),
+                        downloadPath);
+                    String path = "$downloadPath$filename";
+
+                    // UPDATE TRANSFER
+                    transferUpdate(
+                      TransferUpdate(
+                        filename: filename,
+                        path: path,
+                        count: 0,
+                        total: 0,
+                        completed: false,
+                        failed: false,
+                        receiving: true,
+                        id: id,
+                      ),
+                    );
+                    // ADD TO FUTURES
                     _futureDownloads.add(
                       FutureDownload(
-                        url: msg.toString().replaceFirst(_fileTransferCode, ""),
+                        url: url,
                         downloading: false,
-                        id: Random().nextInt(10000),
+                        id: id,
+                        filename: filename,
+                        path: path,
                       ),
                     );
                   }
@@ -352,7 +379,7 @@ class FlutterP2pConnection {
     if (groupOwnerAddress.isEmpty) return false;
     if (_server != null) return true;
     try {
-      closeSocket();
+      closeSocket(notify: false);
       _maxDownloads = maxConcurrentDownloads;
       _deleteOnError = deleteOnError;
       _ipAddress = (await _myIPAddress()) ?? "0.0.0.0";
@@ -386,19 +413,43 @@ class FlutterP2pConnection {
         debugPrint(
             "FlutterP2pConnection: Connected to Socket: $groupOwnerAddress:$_port");
         socket.listen(
-          (event) {
+          (event) async {
             if (event.toString().startsWith(_fileTransferCode)) {
               // ADD TO FUTURE DOWNLOADS
               for (String msg in Uri.decodeComponent(event.toString())
                   .split(_groupSeparation)) {
                 String url = msg.toString().replaceFirst(_fileTransferCode, "");
-                if (!(Uri.decodeComponent(url)
-                    .startsWith("http://$_ipAddress:$_port/"))) {
+                String decodedUrl = Uri.decodeComponent(url);
+                if (!(decodedUrl.startsWith("http://$_ipAddress:$_port/"))) {
+                  int id = int.tryParse(decodedUrl.split("&id=").last) ??
+                      Random().nextInt(10000);
+                  String filename = await _setName(
+                      decodedUrl.split("/").last.replaceFirst(
+                          "&id=${decodedUrl.split("&id=").last}", ""),
+                      downloadPath);
+                  String path = "$downloadPath$filename";
+
+                  // UPDATE TRANSFER
+                  transferUpdate(
+                    TransferUpdate(
+                      filename: filename,
+                      path: path,
+                      count: 0,
+                      total: 0,
+                      completed: false,
+                      failed: false,
+                      receiving: true,
+                      id: id,
+                    ),
+                  );
+                  // ADD TO FUTURES
                   _futureDownloads.add(
                     FutureDownload(
                       url: url,
                       downloading: false,
-                      id: Random().nextInt(10000),
+                      id: id,
+                      filename: filename,
+                      path: path,
                     ),
                   );
                 }
@@ -432,7 +483,7 @@ class FlutterP2pConnection {
     String downloadPath,
   ) async {
     while (_server != null) {
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 1));
       if (_futureDownloads.isNotEmpty) {
         if (_futureDownloads.where((i) => i.downloading == true).isEmpty) {
           if (_futureDownloads.length <= _maxDownloads) {
@@ -440,12 +491,15 @@ class FlutterP2pConnection {
               _futureDownloads[i].downloading = true;
               FutureDownload download = _futureDownloads[i];
               _downloadFile(
-                download.url,
-                transferUpdate,
-                downloadPath,
-                () {
+                url: download.url,
+                transferUpdate: transferUpdate,
+                downloadPath: downloadPath,
+                done: () {
                   _futureDownloads.removeWhere((i) => i.id == download.id);
                 },
+                filename: download.filename,
+                id: download.id,
+                path: download.path,
               );
             }
           } else {
@@ -453,12 +507,15 @@ class FlutterP2pConnection {
               _futureDownloads[i].downloading = true;
               FutureDownload download = _futureDownloads[i];
               _downloadFile(
-                download.url,
-                transferUpdate,
-                downloadPath,
-                () {
+                url: download.url,
+                transferUpdate: transferUpdate,
+                downloadPath: downloadPath,
+                done: () {
                   _futureDownloads.removeWhere((i) => i.id == download.id);
                 },
+                filename: download.filename,
+                id: download.id,
+                path: download.path,
               );
             }
           }
@@ -472,6 +529,7 @@ class FlutterP2pConnection {
     void Function(TransferUpdate) transferUpdate,
   ) async {
     String path = Uri.decodeComponent(req.uri.queryParameters['path'] ?? "");
+    int id = int.tryParse(req.uri.queryParameters['id'] ?? "0") ?? 0;
     File file = File(path);
     List m = (mime(path.split("/").last) ?? "text/plain").split("/");
     String filename = path.split("/").last;
@@ -490,6 +548,7 @@ class FlutterP2pConnection {
             completed: true,
             failed: true,
             receiving: false,
+            id: id,
           ),
         );
       } else {
@@ -500,6 +559,7 @@ class FlutterP2pConnection {
             _fileStream(
               file: file,
               filename: filename,
+              id: id,
               transferUpdate: transferUpdate,
               updateCount: (c) => count = c,
             ),
@@ -514,6 +574,7 @@ class FlutterP2pConnection {
                 completed: true,
                 failed: count == await file.length() ? false : true,
                 receiving: false,
+                id: id,
               ),
             );
           });
@@ -531,6 +592,7 @@ class FlutterP2pConnection {
           completed: true,
           failed: true,
           receiving: false,
+          id: id,
         ),
       );
     }
@@ -539,6 +601,7 @@ class FlutterP2pConnection {
   Stream<List<int>> _fileStream({
     required File file,
     required String filename,
+    required int id,
     required void Function(TransferUpdate) transferUpdate,
     required void Function(int) updateCount,
   }) async* {
@@ -557,6 +620,7 @@ class FlutterP2pConnection {
           completed: false,
           failed: false,
           receiving: false,
+          id: id,
         ),
       );
       yield chip;
@@ -564,25 +628,27 @@ class FlutterP2pConnection {
     }
   }
 
-  Future _downloadFile(
-    String url,
-    void Function(TransferUpdate) transferUpdate,
-    String downloadPath,
-    void Function() done,
-  ) async {
-    if (Uri.decodeComponent(url).startsWith("http://$_ipAddress:$_port/")) {
+  Future _downloadFile({
+    required String url,
+    required void Function(TransferUpdate) transferUpdate,
+    required String downloadPath,
+    required void Function() done,
+    required String filename,
+    required String path,
+    required int id,
+  }) async {
+    String decodedUrl = Uri.decodeComponent(url);
+    if (decodedUrl.startsWith("http://$_ipAddress:$_port/")) {
       done();
       return;
     }
-    String filename =
-        await _setName(Uri.decodeComponent(url).split("/").last, downloadPath);
     int count = 0;
     int total = 0;
     bool failed = false;
     try {
       dio.download(
         url,
-        "$downloadPath$filename",
+        path,
         deleteOnError: _deleteOnError,
         onReceiveProgress: (c, t) {
           count = c;
@@ -590,12 +656,13 @@ class FlutterP2pConnection {
           transferUpdate(
             TransferUpdate(
               filename: filename,
-              path: "$downloadPath$filename",
+              path: path,
               count: count,
               total: total,
               completed: false,
               failed: false,
               receiving: true,
+              id: id,
             ),
           );
         },
@@ -610,12 +677,13 @@ class FlutterP2pConnection {
             transferUpdate(
               TransferUpdate(
                 filename: filename,
-                path: "$downloadPath$filename",
+                path: path,
                 count: count,
                 total: total,
                 completed: true,
                 failed: failed,
                 receiving: true,
+                id: id,
               ),
             );
             done();
@@ -625,12 +693,13 @@ class FlutterP2pConnection {
       transferUpdate(
         TransferUpdate(
           filename: filename,
-          path: "$downloadPath$filename",
+          path: path,
           count: count,
           total: total,
           completed: true,
           failed: failed,
           receiving: true,
+          id: id,
         ),
       );
       done();
@@ -644,7 +713,10 @@ class FlutterP2pConnection {
       String ext = name.substring(name.lastIndexOf("."));
       while (true) {
         String newName = name.replaceFirst(ext, "($number)$ext");
-        if (!(await File(path + newName).exists())) return newName;
+        if (!(await File(path + newName).exists())) {
+          await File(path + newName).create();
+          return newName;
+        }
         number++;
       }
     } catch (_) {
@@ -666,30 +738,57 @@ class FlutterP2pConnection {
     }
   }
 
-  Future<bool> sendFiletoSocket(List<String> paths) async {
+  Future<List<TransferUpdate>?> sendFiletoSocket(List<String> paths) async {
     try {
+      if (_ipAddress.isEmpty) return null;
       List<String> donotexist =
           paths.where((path) => (File(path).existsSync()) == false).toList();
-      if (donotexist.isNotEmpty) return false;
+      if (donotexist.isNotEmpty) return null;
+
+      // CREATE IDS
+      List<int> ids = [];
+      for (var i in paths) {
+        ids.add(Random().nextInt(1000000000));
+      }
+
+      // SEND TO SOCKETS
       for (WebSocket? socket in _sockets) {
         if (socket != null) {
           String msg = '';
           for (int i = 0; i < paths.length; i++) {
             msg +=
-                "${_fileTransferCode}http://$_ipAddress:$_port/file?path=${Uri.encodeComponent(paths[i])}";
+                "${_fileTransferCode}http://$_ipAddress:$_port/file?path=${Uri.encodeComponent(paths[i])}&id=${ids[i]}";
             if (i < paths.length - 1) msg += _groupSeparation;
           }
           socket.add(msg);
         }
       }
-      return true;
+
+      // UPDATE TRANSFERS
+      List<TransferUpdate> updates = [];
+      for (int i = 0; i < paths.length; i++) {
+        String filename = paths[i].split("/").last;
+        updates.add(
+          TransferUpdate(
+            filename: filename,
+            path: paths[i],
+            count: 0,
+            total: 0,
+            completed: false,
+            failed: false,
+            receiving: false,
+            id: ids[i],
+          ),
+        );
+      }
+      return updates;
     } catch (e) {
       debugPrint("FlutterP2pConnection: Tranfer error: $e");
-      return false;
+      return null;
     }
   }
 
-  bool closeSocket() {
+  bool closeSocket({bool notify = true}) {
     try {
       if (_server != null) _server?.close();
       for (WebSocket? socket in _sockets) {
@@ -702,7 +801,7 @@ class FlutterP2pConnection {
       _futureDownloads.clear();
       _ipAddress = '';
       _as = '';
-      debugPrint("FlutterP2pConnection: Closed Socket!");
+      if (notify == true) debugPrint("FlutterP2pConnection: Closed Socket!");
       return true;
     } catch (_) {
       return false;
@@ -872,6 +971,7 @@ class TransferUpdate {
   final bool completed;
   final bool failed;
   final bool receiving;
+  final int id;
   TransferUpdate({
     required this.filename,
     required this.path,
@@ -880,6 +980,7 @@ class TransferUpdate {
     required this.completed,
     required this.failed,
     required this.receiving,
+    required this.id,
   });
 }
 
@@ -887,9 +988,13 @@ class FutureDownload {
   String url;
   bool downloading;
   int id;
+  final String filename;
+  final String path;
   FutureDownload({
     required this.url,
     required this.downloading,
     required this.id,
+    required this.filename,
+    required this.path,
   });
 }

@@ -276,7 +276,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
       }
     }
     context.registerReceiver(receiver, intentFilter)
-    Log.d(TAG, "FlutterP2pConnection: Initialized wifi p2p connection")
+    //Log.d(TAG, "FlutterP2pConnection: Initialized wifi p2p connection")
     result.success(true)
   }
 
@@ -408,7 +408,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
         list.add("{\"deviceName\": \"${device.deviceName}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}")
       }
       EfoundPeers = list
-      Log.d(TAG, list.toString())
+      //Log.d(TAG, list.toString())
     })
   }
 
@@ -419,10 +419,14 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     @SuppressLint("SimpleDateFormat")
     override fun onListen(p0: Any?, sink: EventChannel.EventSink) {
       eventSink = sink
+      var peers: String = ""
       val r: Runnable = object : Runnable {
         override fun run() {
           handler.post {
-            eventSink?.success(EfoundPeers)
+            if (peers != EfoundPeers.toString()) {
+              peers = EfoundPeers.toString()
+              eventSink?.success(EfoundPeers)
+            }
           }
           handler.postDelayed(this, 1000)
         }
@@ -441,20 +445,28 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     @SuppressLint("SimpleDateFormat")
     override fun onListen(p0: Any?, sink: EventChannel.EventSink) {
       eventSink = sink
+      var networkinfo: NetworkInfo? = null
+      var wifip2pinfo: WifiP2pInfo? = null
       val r: Runnable = object : Runnable {
         override fun run() {
           handler.post {
             val ni: NetworkInfo? = EnetworkInfo
             val wi: WifiP2pInfo? = EwifiP2pInfo
             if (ni != null && wi != null) {
-              if (ni.isConnected == true && wi.groupFormed == true) {
+              if (networkinfo != ni && wifip2pinfo != wi) {
+                networkinfo = ni
+                wifip2pinfo = wi
                 eventSink?.success("{\"isConnected\": ${ni.isConnected}, \"isGroupOwner\": ${wi.isGroupOwner}, \"groupOwnerAddress\": \"${wi.groupOwnerAddress}\", \"groupFormed\": ${wi.groupFormed}, \"clients\": ${groupClients}}")
-              } else {
-                eventSink?.success("null")
+                //if (ni.isConnected == true && wi.groupFormed == true) {
+                //  eventSink?.success("{\"isConnected\": ${ni.isConnected}, \"isGroupOwner\": ${wi.isGroupOwner}, \"groupOwnerAddress\": \"${wi.groupOwnerAddress}\", \"groupFormed\": ${wi.groupFormed}, \"clients\": ${groupClients}}")
+                //} else {
+                //  eventSink?.success("null")
+                //}
               }
-            } else {
-                eventSink?.success("null")
-            }
+            } 
+            //else {
+            //    eventSink?.success("null")
+            //}
           }
           handler.postDelayed(this, 1000)
         }

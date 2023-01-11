@@ -54,10 +54,8 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
       _flutterP2pConnectionPlugin.unregister();
-      debugPrint(">>> PAUSE");
     } else if (state == AppLifecycleState.resumed) {
       _flutterP2pConnectionPlugin.register();
-      debugPrint(">>> RESUME");
     }
   }
 
@@ -66,18 +64,14 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     await _flutterP2pConnectionPlugin.register();
     _streamWifiInfo =
         _flutterP2pConnectionPlugin.streamWifiP2PInfo().listen((event) {
-      if (wifiP2PInfo != event) {
-        setState(() {
-          wifiP2PInfo = event;
-        });
-      }
+      setState(() {
+        wifiP2PInfo = event;
+      });
     });
     _streamPeers = _flutterP2pConnectionPlugin.streamPeers().listen((event) {
-      if (peers != event) {
-        setState(() {
-          peers = event;
-        });
-      }
+      setState(() {
+        peers = event;
+      });
     });
   }
 
@@ -97,7 +91,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                 "${transfer.receiving == true ? "received" : "sent"}: ${transfer.filename}");
           }
           print(
-              "FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
+              "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
         },
         onRequest: (req) async {
           request(req);
@@ -122,7 +116,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                 "${transfer.receiving == true ? "received" : "sent"}: ${transfer.filename}");
           }
           print(
-              "FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
+              "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
         },
         onRequest: (req) async {
           request(req);
@@ -165,7 +159,8 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
       showGoUp: true,
     );
     if (filePath == null) return;
-    bool sent = await _flutterP2pConnectionPlugin.sendFiletoSocket(
+    List<TransferUpdate>? id =
+        await _flutterP2pConnectionPlugin.sendFiletoSocket(
       [
         filePath,
         // "/storage/emulated/0/Download/Likee_7100105253123033459.mp4",
@@ -173,7 +168,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         // "/storage/emulated/0/Download/03 Omah Lay - Godly (NetNaija.com).mp3",
       ],
     );
-    print(sent);
+    print(id);
   }
 
   void snack(String msg) async {
