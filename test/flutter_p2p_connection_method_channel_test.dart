@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection_method_channel.dart';
 
 void main() {
-  MethodChannelFlutterP2pConnection platform = MethodChannelFlutterP2pConnection();
+  MethodChannelFlutterP2pConnection platform =
+      MethodChannelFlutterP2pConnection();
   const MethodChannel channel = MethodChannel('flutter_p2p_connection');
 
   TestWidgetsFlutterBinding.ensureInitialized();
