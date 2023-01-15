@@ -223,11 +223,12 @@ Future startSocket() async {
         // transfer.count is the amount of bytes transfered
         // transfer.total is the file size in bytes
         // if transfer.receiving is true, you are receiving the file, else you're sending the file.
+        // call `transfer.cancelToken?.cancel()` to cancel transfer. This method is only applicable to receiving transfers.
         print(
             "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
       },
       // handle string transfer from server
-      onRequest: (req) async {
+      receiveString: (req) async {
         print(req);
       },
     );
@@ -261,11 +262,12 @@ Future connectToSocket() async {
         // transfer.count is the amount of bytes transfered
         // transfer.total is the file size in bytes
         // if transfer.receiving is true, you are receiving the file, else you're sending the file.
+        // call `transfer.cancelToken?.cancel()` to cancel transfer. This method is only applicable to receiving transfers.
         print(
             "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
       },
       // handle string transfer from server
-      onRequest: (req) async {
+      receiveString: (req) async {
         print(req);
       },
     );
@@ -285,7 +287,7 @@ To transfer file:
 This method returns a list of transferUpdates. if it returns `null`, the transfer failed!
 
 ```dart
-List<TransferUpdate>? id = _flutterP2pConnectionPlugin.sendFiletoSocket(["filePath1","filePath2","filePath3"]);
+List<TransferUpdate>? updates = _flutterP2pConnectionPlugin.sendFiletoSocket(["filePath1","filePath2","filePath3"]);
 // Transfered files will be stored in the downloadPath you gave in the `startSocket` or `connectToSocket` method.
 
 ```

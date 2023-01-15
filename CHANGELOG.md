@@ -25,3 +25,7 @@
 ## 1.0.6
 
 - fix stream subscription issues
+
+## 1.0.7
+
+- implement transfer cancel

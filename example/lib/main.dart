@@ -88,13 +88,13 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         transferUpdate: (transfer) {
           if (transfer.completed) {
             snack(
-                "${transfer.receiving == true ? "received" : "sent"}: ${transfer.filename}");
+                "${transfer.failed ? "failed to ${transfer.receiving ? "receive" : "send"}" : transfer.receiving ? "received" : "sent"}: ${transfer.filename}");
           }
           print(
               "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
         },
-        onRequest: (req) async {
-          request(req);
+        receiveString: (req) async {
+          snack(req);
         },
       );
     }
@@ -111,15 +111,16 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
           snack("connected to socket: $address");
         },
         transferUpdate: (transfer) {
+          // if (transfer.count == 0) transfer.cancelToken?.cancel();
           if (transfer.completed) {
             snack(
-                "${transfer.receiving == true ? "received" : "sent"}: ${transfer.filename}");
+                "${transfer.failed ? "failed to ${transfer.receiving ? "receive" : "send"}" : transfer.receiving ? "received" : "sent"}: ${transfer.filename}");
           }
           print(
               "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
         },
-        onRequest: (req) async {
-          request(req);
+        receiveString: (req) async {
+          snack(req);
         },
       );
     }
@@ -136,27 +137,18 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     );
   }
 
-  void request(dynamic req) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          req,
-        ),
-      ),
-    );
-  }
-
   Future sendMessage() async {
     _flutterP2pConnectionPlugin.sendStringToSocket(msgText.text);
   }
 
-  Future sendFile() async {
+  Future sendFile(bool phone) async {
     String? filePath = await FilesystemPicker.open(
       context: context,
-      rootDirectory: Directory("/storage/emulated/0/"),
+      rootDirectory: Directory(phone ? "/storage/emulated/0/" : "/storage/"),
       fsType: FilesystemType.file,
       fileTileSelectMode: FileTileSelectMode.wholeTile,
       showGoUp: true,
+      folderIconColor: Colors.blue,
     );
     if (filePath == null) return;
     List<TransferUpdate>? id =
@@ -411,7 +403,13 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
             ),
             ElevatedButton(
               onPressed: () async {
-                sendFile();
+                sendFile(true);
+              },
+              child: const Text("send File from phone"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                sendFile(false);
               },
               child: const Text("send File"),
             ),
