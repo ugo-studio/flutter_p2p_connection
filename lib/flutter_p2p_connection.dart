@@ -24,7 +24,7 @@ class FlutterP2pConnection {
   String _as = '';
   HttpServer? _server;
 
-  Future<String?> _myIPAddress() async {
+  Future<String?> getIPAddress() async {
     List<NetworkInterface> interfaces = await NetworkInterface.list(
       type: InternetAddressType.IPv4,
       includeLinkLocal: true,
@@ -266,7 +266,6 @@ class FlutterP2pConnection {
     required void Function(dynamic req) receiveString,
   }) async {
     if (groupOwnerAddress.isEmpty) return false;
-    if (_server != null) return true;
     try {
       closeSocket(notify: false);
       _maxDownloads = maxConcurrentDownloads;
@@ -342,7 +341,8 @@ class FlutterP2pConnection {
               },
               cancelOnError: true,
               onDone: () {
-                debugPrint("FlutterP2pConnection: Closed Socket!");
+                debugPrint(
+                    "FlutterP2pConnection: A Device Disconnected from Socket!");
                 socketServer.close(_code);
                 _sockets.removeWhere(
                     (e) => e == null ? true : e.closeCode == _code);
@@ -384,12 +384,11 @@ class FlutterP2pConnection {
     required void Function(dynamic req) receiveString,
   }) async {
     if (groupOwnerAddress.isEmpty) return false;
-    if (_server != null) return true;
     try {
       closeSocket(notify: false);
       _maxDownloads = maxConcurrentDownloads;
       _deleteOnError = deleteOnError;
-      _ipAddress = (await _myIPAddress()) ?? "0.0.0.0";
+      _ipAddress = (await getIPAddress()) ?? "0.0.0.0";
       _as = as ??
           await FlutterP2pConnectionPlatform.instance.getPlatformModel() ??
           (Random().nextInt(5000) + 1000).toString();
@@ -497,39 +496,65 @@ class FlutterP2pConnection {
       if (_futureDownloads.isNotEmpty) {
         if (_futureDownloads.where((i) => i.downloading == true).isEmpty) {
           if (_futureDownloads.length <= _maxDownloads) {
+            List<Future> futures = [];
+
+            //ADD TO FUTURES
             for (int i = 0; i < _futureDownloads.length; i++) {
               _futureDownloads[i].downloading = true;
-              FutureDownload download = _futureDownloads[i];
-              _downloadFile(
-                url: download.url,
-                transferUpdate: transferUpdate,
-                downloadPath: downloadPath,
-                done: () {
-                  _futureDownloads.removeWhere((i) => i.id == download.id);
-                },
-                filename: download.filename,
-                id: download.id,
-                path: download.path,
-                token: download.cancelToken,
+              futures.add(
+                Future(
+                  () async {
+                    FutureDownload download = _futureDownloads[i];
+                    await _downloadFile(
+                      url: download.url,
+                      transferUpdate: transferUpdate,
+                      downloadPath: downloadPath,
+                      done: () {
+                        _futureDownloads
+                            .removeWhere((i) => i.id == download.id);
+                      },
+                      filename: download.filename,
+                      id: download.id,
+                      path: download.path,
+                      token: download.cancelToken,
+                    );
+                    return true;
+                  },
+                ),
               );
             }
+            // RUN FUTURES
+            await Future.wait(futures);
           } else {
+            List<Future> futures = [];
+
+            //ADD TO FUTURES
             for (int i = 0; i < _maxDownloads; i++) {
               _futureDownloads[i].downloading = true;
-              FutureDownload download = _futureDownloads[i];
-              _downloadFile(
-                url: download.url,
-                transferUpdate: transferUpdate,
-                downloadPath: downloadPath,
-                done: () {
-                  _futureDownloads.removeWhere((i) => i.id == download.id);
-                },
-                filename: download.filename,
-                id: download.id,
-                path: download.path,
-                token: download.cancelToken,
+              futures.add(
+                Future(
+                  () async {
+                    FutureDownload download = _futureDownloads[i];
+                    await _downloadFile(
+                      url: download.url,
+                      transferUpdate: transferUpdate,
+                      downloadPath: downloadPath,
+                      done: () {
+                        _futureDownloads
+                            .removeWhere((i) => i.id == download.id);
+                      },
+                      filename: download.filename,
+                      id: download.id,
+                      path: download.path,
+                      token: download.cancelToken,
+                    );
+                    return true;
+                  },
+                ),
               );
             }
+            //RUN FUTURES
+            await Future.wait(futures);
           }
         }
       }
@@ -565,6 +590,7 @@ class FlutterP2pConnection {
           ),
         );
       } else {
+        debugPrint("<<<<<<<<< SENDING >>>>>>>>> $path");
         req.response
           ..headers.contentType = ContentType(m.first, m.last)
           ..headers.contentLength = await file.length()
@@ -662,6 +688,7 @@ class FlutterP2pConnection {
     int total = 0;
     bool failed = false;
     try {
+      debugPrint("<<<<<<<<< RECEIVING >>>>>>>>> $path");
       _dio.download(
         url,
         path,
@@ -685,7 +712,7 @@ class FlutterP2pConnection {
           );
         },
       )
-        ..catchError((err) async {
+        ..onError((err, stack) async {
           failed = true;
           Future.delayed(
             const Duration(milliseconds: 500),
@@ -724,7 +751,7 @@ class FlutterP2pConnection {
           count: count,
           total: total,
           completed: true,
-          failed: failed,
+          failed: true,
           receiving: true,
           id: id,
           cancelToken: token,

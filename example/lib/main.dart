@@ -77,7 +77,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 
   Future startSocket() async {
     if (wifiP2PInfo != null) {
-      await _flutterP2pConnectionPlugin.startSocket(
+      bool started = await _flutterP2pConnectionPlugin.startSocket(
         groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress,
         downloadPath: "/storage/emulated/0/Download/",
         maxConcurrentDownloads: 2,
@@ -97,6 +97,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
           snack(req);
         },
       );
+      snack("open socket: $started");
     }
   }
 
@@ -105,7 +106,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
       await _flutterP2pConnectionPlugin.connectToSocket(
         groupOwnerAddress: wifiP2PInfo!.groupOwnerAddress,
         downloadPath: "/storage/emulated/0/Download/",
-        maxConcurrentDownloads: 2,
+        maxConcurrentDownloads: 3,
         deleteOnError: true,
         onConnect: (address) {
           snack("connected to socket: $address");
@@ -151,16 +152,18 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
       folderIconColor: Colors.blue,
     );
     if (filePath == null) return;
-    List<TransferUpdate>? id =
+    List<TransferUpdate>? updates =
         await _flutterP2pConnectionPlugin.sendFiletoSocket(
       [
         filePath,
         // "/storage/emulated/0/Download/Likee_7100105253123033459.mp4",
-        // "/storage/emulated/0/Download/Get started _ Socket.IO.html",
+        // "/storage/0E64-4628/Download/Adele-Set-Fire-To-The-Rain-via-Naijafinix.com_.mp3",
+        // "/storage/0E64-4628/Flutter SDK/p2p_plugin.apk",
         // "/storage/emulated/0/Download/03 Omah Lay - Godly (NetNaija.com).mp3",
+        // "/storage/0E64-4628/Download/Adele-Set-Fire-To-The-Rain-via-Naijafinix.com_.mp3",
       ],
     );
-    print(id);
+    print(updates);
   }
 
   void snack(String msg) async {
@@ -354,6 +357,13 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                 );
               },
               child: const Text("get group info"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                String? ip = await _flutterP2pConnectionPlugin.getIPAddress();
+                snack("ip: $ip");
+              },
+              child: const Text("get ip"),
             ),
             ElevatedButton(
               onPressed: () async {

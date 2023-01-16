@@ -29,3 +29,7 @@
 ## 1.0.7
 
 - implement transfer cancel
+
+## 1.0.8
+
+- fix concurrent download issues
