@@ -33,3 +33,7 @@
 ## 1.0.8
 
 - fix concurrent download issues
+
+## 1.0.9
+
+- fix transfer update issues

@@ -15,6 +15,8 @@ class FlutterP2pConnection {
   final int _code = 4045;
   int _maxDownloads = 2;
   final String _fileTransferCode = "~~&&^^>><<{|MeSsAgEs|}>><<^^&&~~";
+  final String _fileSizeSeperation =
+      "~~&&^^>><<{|FiLeSiZeSePeRaTiOn|}>><<^^&&~~";
   final String _groupSeparation = "~~&&^^>><<{||||}>><<^^&&~~";
   final List<WebSocket?> _sockets = [];
   final List<FutureDownload> _futureDownloads = [];
@@ -293,8 +295,13 @@ class FlutterP2pConnection {
                 if (event.toString().startsWith(_fileTransferCode)) {
                   // ADD TO FUTURE DOWNLOADS
                   for (String msg in event.toString().split(_groupSeparation)) {
-                    String url =
-                        msg.toString().replaceFirst(_fileTransferCode, "");
+                    String url = msg.toString().split(_fileSizeSeperation).last;
+                    int size = int.tryParse(msg
+                            .toString()
+                            .replaceFirst(_fileTransferCode, "")
+                            .split(_fileSizeSeperation)
+                            .first) ??
+                        0;
                     int id = int.tryParse(url.split("&id=").last) ??
                         Random().nextInt(10000);
                     String filename = await _setName(
@@ -312,7 +319,7 @@ class FlutterP2pConnection {
                         filename: filename,
                         path: path,
                         count: 0,
-                        total: 0,
+                        total: size,
                         completed: false,
                         failed: false,
                         receiving: true,
@@ -423,7 +430,13 @@ class FlutterP2pConnection {
             if (event.toString().startsWith(_fileTransferCode)) {
               // ADD TO FUTURE DOWNLOADS
               for (String msg in event.toString().split(_groupSeparation)) {
-                String url = msg.toString().replaceFirst(_fileTransferCode, "");
+                String url = msg.toString().split(_fileSizeSeperation).last;
+                int size = int.tryParse(msg
+                        .toString()
+                        .replaceFirst(_fileTransferCode, "")
+                        .split(_fileSizeSeperation)
+                        .first) ??
+                    0;
                 if (!(url.startsWith("http://$_ipAddress:$_port/"))) {
                   int id = int.tryParse(url.split("&id=").last) ??
                       Random().nextInt(10000);
@@ -442,7 +455,7 @@ class FlutterP2pConnection {
                       filename: filename,
                       path: path,
                       count: 0,
-                      total: 0,
+                      total: size,
                       completed: false,
                       failed: false,
                       receiving: true,
@@ -811,8 +824,9 @@ class FlutterP2pConnection {
         if (socket != null) {
           String msg = '';
           for (int i = 0; i < paths.length; i++) {
+            var size = await File(paths[i]).length();
             msg +=
-                "${_fileTransferCode}http://$_ipAddress:$_port/file?path=${paths[i]}&id=${ids[i]}";
+                "${_fileTransferCode}${size}${_fileSizeSeperation}http://$_ipAddress:$_port/file?path=${paths[i]}&id=${ids[i]}";
             if (i < paths.length - 1) msg += _groupSeparation;
           }
           socket.add(msg);
@@ -828,7 +842,7 @@ class FlutterP2pConnection {
             filename: filename,
             path: paths[i],
             count: 0,
-            total: 0,
+            total: await File(paths[i]).length(),
             completed: false,
             failed: false,
             receiving: false,
