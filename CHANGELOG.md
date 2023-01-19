@@ -37,3 +37,7 @@
 ## 1.0.9
 
 - fix transfer update issues
+
+## 2.0.0
+
+- fix cancelling transfer issues

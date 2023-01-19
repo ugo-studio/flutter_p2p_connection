@@ -578,6 +578,7 @@ class FlutterP2pConnection {
     HttpRequest req,
     void Function(TransferUpdate) transferUpdate,
   ) async {
+    String cancel = req.uri.queryParameters['cancel'] ?? "";
     String path = req.uri.queryParameters['path'] ?? "";
     int id = int.tryParse(req.uri.queryParameters['id'] ?? "0") ?? 0;
     File file = File(path);
@@ -585,6 +586,26 @@ class FlutterP2pConnection {
     String filename = path.split("/").last;
     int count = 0;
     try {
+      if (cancel == "true") {
+        req.response
+          ..write("cancelled")
+          ..close();
+        transferUpdate(
+          TransferUpdate(
+            filename: filename,
+            path: path,
+            count: count,
+            total: await file.length(),
+            completed: true,
+            failed: true,
+            receiving: false,
+            id: id,
+            cancelToken: null,
+          ),
+        );
+        debugPrint("<<<<<<<<< CANCELLED >>>>>>>>> $path");
+        return;
+      }
       if (path.isEmpty) {
         req.response
           ..addError(const HttpException("not found"))
@@ -697,13 +718,34 @@ class FlutterP2pConnection {
       done();
       return;
     }
+    if (token.isCancelled == true) {
+      transferUpdate(
+        TransferUpdate(
+          filename: filename,
+          path: path,
+          count: 0,
+          total: 0,
+          completed: true,
+          failed: true,
+          receiving: true,
+          id: id,
+          cancelToken: token,
+        ),
+      );
+
+      // send cancelled request
+      await _dio.getUri(Uri.parse("$url&cancel=true"));
+      debugPrint("<<<<<<<<< CANCELLED >>>>>>>>> $path");
+      done();
+      return;
+    }
     int count = 0;
     int total = 0;
     bool failed = false;
     try {
       debugPrint("<<<<<<<<< RECEIVING >>>>>>>>> $path");
       _dio.download(
-        url,
+        "$url&cancel=false",
         path,
         deleteOnError: _deleteOnError,
         cancelToken: token,
@@ -814,8 +856,7 @@ class FlutterP2pConnection {
 
       // CREATE IDS
       List<int> ids = [];
-      // ignore: unused_local_variable
-      for (var i in paths) {
+      for (var _ in paths) {
         ids.add(Random().nextInt(1000000000));
       }
 
@@ -826,7 +867,7 @@ class FlutterP2pConnection {
           for (int i = 0; i < paths.length; i++) {
             var size = await File(paths[i]).length();
             msg +=
-                "${_fileTransferCode}${size}${_fileSizeSeperation}http://$_ipAddress:$_port/file?path=${paths[i]}&id=${ids[i]}";
+                "$_fileTransferCode$size${_fileSizeSeperation}http://$_ipAddress:$_port/file?path=${paths[i]}&id=${ids[i]}";
             if (i < paths.length - 1) msg += _groupSeparation;
           }
           socket.add(msg);
