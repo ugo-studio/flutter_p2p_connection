@@ -18,6 +18,9 @@ class FlutterP2pConnection {
   final String _fileSizeSeperation =
       "~~&&^^>><<{|FiLeSiZeSePeRaTiOn|}>><<^^&&~~";
   final String _groupSeparation = "~~&&^^>><<{||||}>><<^^&&~~";
+  final String _andSymbol = "%4AA5%";
+  final String _equalsSymbol = "%6EE7%";
+  final String _questionSymbol = "%8QQ9%";
   final List<WebSocket?> _sockets = [];
   final List<FutureDownload> _futureDownloads = [];
   final Dio _dio = Dio();
@@ -579,13 +582,17 @@ class FlutterP2pConnection {
     void Function(TransferUpdate) transferUpdate,
   ) async {
     String cancel = req.uri.queryParameters['cancel'] ?? "";
-    String path = req.uri.queryParameters['path'] ?? "";
+    String path = (req.uri.queryParameters['path'] ?? "")
+        .replaceAll(_andSymbol, "&")
+        .replaceAll(_equalsSymbol, "=")
+        .replaceAll(_questionSymbol, "?");
     int id = int.tryParse(req.uri.queryParameters['id'] ?? "0") ?? 0;
-    File file = File(path);
+    File? file;
     List m = (mime(path.split("/").last) ?? "text/plain").split("/");
     String filename = path.split("/").last;
     int count = 0;
     try {
+      file = File(path);
       if (cancel == "true") {
         req.response
           ..write("cancelled")
@@ -643,9 +650,11 @@ class FlutterP2pConnection {
                 filename: filename,
                 path: path,
                 count: count,
-                total: await file.length(),
+                total: file == null ? 0 : await file.length(),
                 completed: true,
-                failed: count == await file.length() ? false : true,
+                failed: count == (file == null ? 0 : await file.length())
+                    ? false
+                    : true,
                 receiving: false,
                 id: id,
                 cancelToken: null,
@@ -662,7 +671,7 @@ class FlutterP2pConnection {
           filename: filename,
           path: path,
           count: count,
-          total: await file.length(),
+          total: file == null ? 0 : await file.length(),
           completed: true,
           failed: true,
           receiving: false,
@@ -867,7 +876,7 @@ class FlutterP2pConnection {
           for (int i = 0; i < paths.length; i++) {
             var size = await File(paths[i]).length();
             msg +=
-                "$_fileTransferCode$size${_fileSizeSeperation}http://$_ipAddress:$_port/file?path=${paths[i]}&id=${ids[i]}";
+                "$_fileTransferCode$size${_fileSizeSeperation}http://$_ipAddress:$_port/file?path=${paths[i].replaceAll("&", _andSymbol).replaceAll("=", _equalsSymbol).replaceAll("?", _questionSymbol)}&id=${ids[i]}";
             if (i < paths.length - 1) msg += _groupSeparation;
           }
           socket.add(msg);

@@ -41,3 +41,7 @@
 ## 2.0.0
 
 - fix cancelling transfer issues
+
+## 2.0.1
+
+- issue: Does not accept file paths with '&, =, ?' fixed
