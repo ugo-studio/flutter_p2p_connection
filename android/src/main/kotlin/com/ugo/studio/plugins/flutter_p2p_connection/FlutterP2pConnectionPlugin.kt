@@ -88,14 +88,28 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
       }
     } else if (call.method == "connect") {
       try {
+        print("calling connect");
         val address: String = call.argument("address") ?: ""
         connect(result, address)
+        print("after calling connect");
       } catch (e: Exception) {
-        result.error("Err>>:", " ${e}", null)
+        result.error("Err>>:", "fdadfadfsdfasfdas ${e}", null)
       }
     } else if (call.method == "disconnect") {
       try {
         disconnect(result)
+      } catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "disconnectFromAllPeers") {
+      try {
+        disconnectFromAllPeers(result)
+      } catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "requestPeers") {
+      try {
+        peersListener()
       } catch (e: Exception) {
         result.error("Err>>:", " ${e}", null)
       }
@@ -114,7 +128,13 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     } else if (call.method == "groupInfo") {
       try {
         requestGroupInfo(result)
-      }catch (e: Exception) {
+      } catch (e: Exception) {
+        result.error("Err>>:", " ${e}", null)
+      }
+    } else if (call.method == "deviceInfo") {
+      try {
+        requestDeviceName(result)
+      } catch (e: Exception) {
         result.error("Err>>:", " ${e}", null)
       }
     } else if (call.method == "fetchPeers") {
@@ -238,6 +258,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
                 Log.d(TAG, "FlutterP2pConnection: state enabled, Int=${state}")
               }
               else -> {
+                // TODO: notify the user
                 // Wi-Fi P2P is not enabled
                 Log.d(TAG, "FlutterP2pConnection: state disabled, Int=${state}")
               }
@@ -253,7 +274,9 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
             if (group != null) {
                 var clients: String = ""
                 for (device: WifiP2pDevice in group.clientList) {
-                  clients = clients + "{\"deviceName\": \"${device.deviceName}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}, "
+                  val re = Regex("[^A-Za-z0-9 ']")
+                  val name = re.replace(device.deviceName, "") // 
+                  clients = clients + "{\"deviceName\": \"${name}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}, "
                 }
                 if (clients.length > 0) {
                   clients = clients.subSequence(0, clients.length-2).toString()
@@ -329,7 +352,9 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
       if (group != null) {
         var clients: String = ""
         for (device: WifiP2pDevice in group.clientList) {
-          clients = clients + "{\"deviceName\": \"${device.deviceName}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}, "
+          val re = Regex("[^A-Za-z0-9 ']")
+          val name = re.replace(device.deviceName, "") // 
+          clients = clients + "{\"deviceName\": \"${name}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}, "
         }
         if (clients.length > 0) {
           clients = clients.subSequence(0, clients.length-2).toString()
@@ -347,6 +372,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
         result.success(true);
       }
       override fun onFailure(reasonCode: Int) {
+        // TODO: return tha actual reason code
         Log.d(TAG, "FlutterP2pConnection: discovering wifi p2p devices failed, reasonCode=${reasonCode}")
         result.success(false);
       }
@@ -366,7 +392,27 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     })
   }
 
+  fun requestDeviceName(result: Result) {
+
+    if( android.os.Build.VERSION.SDK_INT <  android.os.Build.VERSION_CODES.Q){
+        result.success("");
+        return;
+    }
+
+    wifimanager.requestDeviceInfo(wifichannel, object : WifiP2pManager.DeviceInfoListener {
+      override fun onDeviceInfoAvailable(device: WifiP2pDevice?) {
+        if (device != null) {
+          val re = Regex("[^A-Za-z0-9 ']")
+          val name = re.replace(device.deviceName, "") // works
+          Log.d(TAG, "FlutterP2pConnection: deviceInfo={deviceName: \"${device.deviceName}\", deviceAddress: \"${device.deviceAddress}\", isGroupOwner: ${device.isGroupOwner}, isServiceDiscoveryCapable: ${device.isServiceDiscoveryCapable}, primaryDeviceType: \"${device.primaryDeviceType}\", secondaryDeviceType: \"${device.secondaryDeviceType}\", status: ${device.status}}")
+          result.success("{\"deviceName\": \"${name}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}")
+        }
+      }
+    })
+  }
+
   fun connect(result: Result, address: String) {
+    print("avout to call connect");
     val config = WifiP2pConfig()
     config.deviceAddress = address
     config.wps.setup = WpsInfo.PBC
@@ -382,6 +428,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
         }
       })
     }
+    print("afterrrr");
   }
 
   fun disconnect(result: Result) {
@@ -402,13 +449,37 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
   }
 
   fun peersListener() {
+    print("HELLOFROM: peersListener")
     wifimanager.requestPeers(wifichannel, WifiP2pManager.PeerListListener { peers: WifiP2pDeviceList ->
       var list: MutableList<String> = mutableListOf()
       for (device: WifiP2pDevice in peers.deviceList) {
-        list.add("{\"deviceName\": \"${device.deviceName}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}")
+        val re = Regex("[^A-Za-z0-9 ']")
+        val name = re.replace(device.deviceName, "") // works
+        list.add("{\"deviceName\": \"${name}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}")
       }
+      print("HELLOFROM: I found some peers")
       EfoundPeers = list
       //Log.d(TAG, list.toString())
+    })
+  }
+
+  fun disconnectFromAllPeers(result: Result) {
+    wifimanager.requestGroupInfo(wifichannel, WifiP2pManager.GroupInfoListener { group: WifiP2pGroup? ->
+      if (group != null) {
+        wifimanager.removeGroup(wifichannel, object : WifiP2pManager.ActionListener {
+          override fun onSuccess() {
+            Log.d(TAG, "FlutterP2pConnection: disconnected from all peers")
+            result.success(true);
+          }
+          override fun onFailure(reasonCode: Int) {
+            Log.d(TAG, "FlutterP2pConnection: failed to disconnect from all peers, reasonCode=${reasonCode}")
+            result.success(false);
+          }
+        })
+      } else {
+        Log.d(TAG, "FlutterP2pConnection: failed to disconnect from all peers, group is null")
+        result.success(true);
+      }
     })
   }
 
@@ -456,6 +527,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
               if (networkinfo != ni && wifip2pinfo != wi) {
                 networkinfo = ni
                 wifip2pinfo = wi
+                print("{\"isConnected\": ${ni.isConnected}, \"isGroupOwner\": ${wi.isGroupOwner}, \"groupOwnerAddress\": \"${wi.groupOwnerAddress}\", \"groupFormed\": ${wi.groupFormed}, \"clients\": ${groupClients}}");
                 eventSink?.success("{\"isConnected\": ${ni.isConnected}, \"isGroupOwner\": ${wi.isGroupOwner}, \"groupOwnerAddress\": \"${wi.groupOwnerAddress}\", \"groupFormed\": ${wi.groupFormed}, \"clients\": ${groupClients}}")
                 //if (ni.isConnected == true && wi.groupFormed == true) {
                 //  eventSink?.success("{\"isConnected\": ${ni.isConnected}, \"isGroupOwner\": ${wi.isGroupOwner}, \"groupOwnerAddress\": \"${wi.groupOwnerAddress}\", \"groupFormed\": ${wi.groupFormed}, \"clients\": ${groupClients}}")
@@ -485,7 +557,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
   }
 
    override fun onDetachedFromActivity() {
-     TODO("Not yet implemented")
+//     TODO("Not yet implemented")
    }
    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
      activity = binding.activity
@@ -494,7 +566,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
      activity = binding.activity
    }
    override fun onDetachedFromActivityForConfigChanges() {
-     TODO("Not yet implemented")
+//     TODO("Not yet implemented")
    }
 }
 

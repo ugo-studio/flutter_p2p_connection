@@ -58,6 +58,20 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   }
 
   @override
+  Future<bool?> disconnectFromAllPeers() async {
+    final disconnected =
+        await methodChannel.invokeMethod<bool?>("disconnectFromAllPeers");
+    return disconnected;
+  }
+
+  @override
+  Future<bool?> requestPeers() async {
+    final disconnected =
+        await methodChannel.invokeMethod<bool?>("requestPeers");
+    return disconnected;
+  }
+
+  @override
   Future<bool?> createGroup() async {
     final created = await methodChannel.invokeMethod<bool?>("createGroup");
     return created;
@@ -72,6 +86,12 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   @override
   Future<String?> groupInfo() async {
     final info = await methodChannel.invokeMethod<String?>("groupInfo");
+    return info;
+  }
+
+    @override
+  Future<String?> deviceInfo() async {
+    final info = await methodChannel.invokeMethod<String?>("deviceInfo");
     return info;
   }
 

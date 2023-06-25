@@ -52,6 +52,15 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     throw UnimplementedError('disconnect() has not been implemented.');
   }
 
+  Future<bool?> disconnectFromAllPeers() {
+    throw UnimplementedError(
+        'disconnectFromAllPeers() has not been implemented.');
+  }
+
+  Future<bool?> requestPeers() {
+    throw UnimplementedError('requestPeers() has not been implemented.');
+  }
+
   Future<bool?> createGroup() {
     throw UnimplementedError('createGroup() has not been implemented.');
   }
@@ -62,6 +71,10 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
 
   Future<String?> groupInfo() {
     throw UnimplementedError('groupInfo() has not been implemented.');
+  }
+
+  Future<String?> deviceInfo() {
+    throw UnimplementedError('deviceInfo() has not been implemented.');
   }
 
   Future<List<String>?> fetchPeers() {

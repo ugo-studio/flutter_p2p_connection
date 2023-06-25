@@ -86,9 +86,27 @@ class FlutterP2pConnection {
     }
   }
 
-  // Future<bool?> disconnect() {
-  //   return FlutterP2pConnectionPlatform.instance.disconnect();
-  // }
+  Future<bool?> disconnect() async {
+    if ((await FlutterP2pConnectionPlatform.instance.disconnect()) == true) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  Future<bool?> disconnectFromAllPeers() async {
+    if ((await FlutterP2pConnectionPlatform.instance
+            .disconnectFromAllPeers()) ==
+        true) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  Future<void> requestPeers() async {
+    await FlutterP2pConnectionPlatform.instance.requestPeers();
+  }
 
   Future<List<DiscoveredPeers>> fetchPeers() async {
     List<String>? list =
@@ -259,6 +277,17 @@ class FlutterP2pConnection {
       groupNetworkName: json["groupNetworkName"],
       clients: clients,
     );
+  }
+
+  // TODO: return all the information and not just the device name
+  Future<String?> deviceInfo() async {
+    String? gi = await FlutterP2pConnectionPlatform.instance
+        .deviceInfo()
+        .timeout(const Duration(seconds: 2), onTimeout: () => null);
+    if (gi == null || gi == "") return null;
+    Map<String, dynamic>? json = jsonDecode(gi);
+    if (json == null) return null;
+    return json["deviceName"];
   }
 
   Future<bool> startSocket({
