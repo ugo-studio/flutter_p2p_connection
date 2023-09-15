@@ -485,7 +485,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
   }
 
    override fun onDetachedFromActivity() {
-     TODO("Not yet implemented")
+     // TODO("Not yet implemented")
    }
    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
      activity = binding.activity
@@ -494,7 +494,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
      activity = binding.activity
    }
    override fun onDetachedFromActivityForConfigChanges() {
-     TODO("Not yet implemented")
+     // TODO("Not yet implemented")
    }
 }
 
