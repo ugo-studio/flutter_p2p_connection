@@ -231,6 +231,10 @@ Future startSocket() async {
       receiveString: (req) async {
         print(req);
       },
+      // runs when the socket is closed: `_flutterP2pConnectionPlugin.closeSocket()`
+      onCloseSocket: () {
+        print("closed socket");
+      },
     );
   }
 }
@@ -269,6 +273,10 @@ Future connectToSocket() async {
       // handle string transfer from server
       receiveString: (req) async {
         print(req);
+      },
+      // runs when the socket is closed: `_flutterP2pConnectionPlugin.closeSocket()`
+      onCloseSocket: () {
+        print("closed socket");
       },
     );
   }
