@@ -269,6 +269,7 @@ class FlutterP2pConnection {
     required void Function(String name, String address) onConnect,
     required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic req) receiveString,
+    void Function() onCloseSocket = () {},
   }) async {
     if (groupOwnerAddress.isEmpty) return false;
     try {
@@ -372,6 +373,7 @@ class FlutterP2pConnection {
         onError: (error, stack) {},
         onDone: () {
           closeSocket();
+          onCloseSocket();
         },
       );
       _server = httpServer;
@@ -392,6 +394,7 @@ class FlutterP2pConnection {
     required void Function(String address) onConnect,
     required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic req) receiveString,
+    void Function() onCloseSocket = () {},
   }) async {
     if (groupOwnerAddress.isEmpty) return false;
     try {
@@ -490,6 +493,7 @@ class FlutterP2pConnection {
           cancelOnError: true,
           onDone: () {
             closeSocket();
+            onCloseSocket();
           },
         );
         onConnect("$groupOwnerAddress:$_port");
