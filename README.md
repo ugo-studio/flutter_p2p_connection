@@ -283,7 +283,7 @@ Future connectToSocket() async {
 }
 ```
 
-To transfer String:
+To transfer a string/text:
 This method returns a bool.
 
 ```dart
@@ -300,7 +300,7 @@ List<TransferUpdate>? updates = _flutterP2pConnectionPlugin.sendFiletoSocket(["f
 
 ```
 
-To close socket call:
+To close socket:
 
 ```dart
 _flutterP2pConnectionPlugin.closeSocket();
