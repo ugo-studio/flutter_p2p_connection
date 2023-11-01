@@ -51,7 +51,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
   var EnetworkInfo: NetworkInfo? = null
   var EwifiP2pInfo: WifiP2pInfo? = null
   private lateinit var CConnectedPeers: EventChannel
-  var groupClients: String = "[]"
+  var groupClients: String = ""
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     context = flutterPluginBinding.applicationContext
@@ -255,7 +255,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
             wifimanager.requestGroupInfo(wifichannel, WifiP2pManager.GroupInfoListener { group: WifiP2pGroup? ->
             if (group != null) {
               groupClients = jsonClientList(group)
-              Log.d(TAG, "FlutterP2pConnection : " + groupClients)
+              Log.d(TAG, "FlutterP2pConnection : Joris clients " + groupClients)
               }
             })
             val networkInfo: NetworkInfo? = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO)
@@ -328,7 +328,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
         // from https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pDevice
         val deviceName : String = device.deviceName
         val deviceAddress : String = device.deviceAddress
-        val primaryDeviceType : String = device.primaryDeviceType
+        val primaryDeviceType : String? = device.primaryDeviceType
         val secondaryDeviceType : String? = device.secondaryDeviceType
         val status : Int = device.status
         // methods called on object before sending through channel
@@ -349,7 +349,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
       // from https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pDevice
       val deviceName : String = device.deviceName
       val deviceAddress : String = device.deviceAddress
-      val primaryDeviceType : String = device.primaryDeviceType
+      val primaryDeviceType : String? = device.primaryDeviceType
       val secondaryDeviceType : String? = device.secondaryDeviceType
       val status : Int = device.status
       // methods called on object before sending through channel
@@ -366,8 +366,8 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     wifimanager.requestGroupInfo(wifichannel, WifiP2pManager.GroupInfoListener { group: WifiP2pGroup? ->
       if (group != null) {
         var clients = jsonClientList(group)
-        Log.d(TAG, "FlutterP2pConnection: groupInfo={isGroupOwner: \"${group.isGroupOwner}\", passphrase: \"${group.passphrase}\", groupNetworkName: \"${group.networkName}\", \"clients\": \"${group.clientList.toString()}\"}")
-        result.success("{\"isGroupOwner\": ${group.isGroupOwner}, \"passPhrase\": \"${group.passphrase}\", \"groupNetworkName\": \"${group.networkName}\", \"clients\": [${clients}]}")
+        Log.d(TAG, "FlutterP2pConnection: groupInfo={isGroupOwner: \"${group.isGroupOwner}\", passphrase: \"${group.passphrase}\", groupNetworkName: \"${group.networkName}\", \"clients\": \"${clients}\"}")
+        result.success("{\"isGroupOwner\": ${group.isGroupOwner}, \"passPhrase\": \"${group.passphrase}\", \"groupNetworkName\": \"${group.networkName}\", \"clients\": ${clients}}")
       }
     })
   }
@@ -448,7 +448,6 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     private var handler: Handler = Handler(Looper.getMainLooper())
     private var eventSink: EventChannel.EventSink? = null
 
-    @SuppressLint("SimpleDateFormat")
     override fun onListen(p0: Any?, sink: EventChannel.EventSink) {
       eventSink = sink
       var peers: String = ""

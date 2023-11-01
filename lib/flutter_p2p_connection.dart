@@ -1028,7 +1028,7 @@ class DiscoveredPeers {
   final String deviceAddress;
   final bool isGroupOwner;
   final bool isServiceDiscoveryCapable;
-  final String primaryDeviceType;
+  final String? primaryDeviceType;
   final String? secondaryDeviceType;
   final int status;
   const DiscoveredPeers({
@@ -1047,8 +1047,8 @@ class Client {
   final String deviceAddress;
   final bool isGroupOwner;
   final bool isServiceDiscoveryCapable;
-  final String primaryDeviceType;
-  final String secondaryDeviceType;
+  final String? primaryDeviceType;
+  final String? secondaryDeviceType;
   final int status;
   const Client({
     required this.deviceName,
