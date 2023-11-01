@@ -3,7 +3,6 @@ package com.ugo.studio.plugins.flutter_p2p_connection
 import android.Manifest
 import android.app.Activity
 import android.annotation.SuppressLint
-import android.app.Application.ActivityLifecycleCallbacks
 import android.content.BroadcastReceiver
 import android.content.ContentValues.TAG
 import android.content.Context
@@ -15,11 +14,12 @@ import android.net.NetworkInfo
 import android.net.wifi.WifiManager
 import android.net.wifi.WpsInfo
 import android.net.wifi.p2p.*
-import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.NonNull
+import androidx.annotation.RequiresApi
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -29,9 +29,9 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel.Result
-import java.text.SimpleDateFormat
-import java.util.HashMap
 import java.util.*
+
+import com.google.gson.Gson;
 
 /** FlutterP2pConnectionPlugin */
 class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAware {
@@ -63,6 +63,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     CConnectedPeers.setStreamHandler(ConnectedPeersHandler)
   }
 
+  @RequiresApi(Build.VERSION_CODES.M)
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
     if (call.method == "getPlatformVersion") {
       result.success("Android: ${android.os.Build.VERSION.RELEASE}")
@@ -182,6 +183,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     }
   }
 
+  @RequiresApi(Build.VERSION_CODES.M)
   fun checkLocationPermission(result: Result) {
     if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
       && context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
@@ -191,6 +193,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     }
   }
 
+  @RequiresApi(Build.VERSION_CODES.M)
   fun askLocationPermission(result: Result) {
     val perms: Array<String> = arrayOf<String>(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION)
     activity.requestPermissions(perms, 2468)
@@ -251,14 +254,8 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
             // Respond to new connection or disconnections
             wifimanager.requestGroupInfo(wifichannel, WifiP2pManager.GroupInfoListener { group: WifiP2pGroup? ->
             if (group != null) {
-                var clients: String = ""
-                for (device: WifiP2pDevice in group.clientList) {
-                  clients = clients + "{\"deviceName\": \"${device.deviceName}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}, "
-                }
-                if (clients.length > 0) {
-                  clients = clients.subSequence(0, clients.length-2).toString()
-                }
-                groupClients = "[${clients}]"
+              groupClients = jsonClientList(group)
+              Log.d(TAG, "FlutterP2pConnection : " + groupClients)
               }
             })
             val networkInfo: NetworkInfo? = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO)
@@ -324,16 +321,51 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     })
   }
 
+  fun jsonClientList(group: WifiP2pGroup) : String {
+    var clientsJson : MutableList<Any> = mutableListOf()
+    for (device: WifiP2pDevice in group.clientList) {
+      val dev = object {
+        // from https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pDevice
+        val deviceName : String = device.deviceName
+        val deviceAddress : String = device.deviceAddress
+        val primaryDeviceType : String = device.primaryDeviceType
+        val secondaryDeviceType : String? = device.secondaryDeviceType
+        val status : Int = device.status
+        // methods called on object before sending through channel
+        val isGroupOwner : Boolean = device.isGroupOwner()
+        val isServiceDiscoveryCapable : Boolean = device.isServiceDiscoveryCapable()
+        val wpsDisplaySupported : Boolean= device.wpsDisplaySupported()
+        val wpsKeypadSupported : Boolean= device.wpsKeypadSupported()
+        val wpsPbcSupported : Boolean= device.wpsPbcSupported()
+      }
+      clientsJson.add(dev)
+    }
+    return Gson().toJson(clientsJson)
+  }
+
+  fun jsonClient(device: WifiP2pDevice) : String {
+
+    val dev = object {
+      // from https://developer.android.com/reference/android/net/wifi/p2p/WifiP2pDevice
+      val deviceName : String = device.deviceName
+      val deviceAddress : String = device.deviceAddress
+      val primaryDeviceType : String = device.primaryDeviceType
+      val secondaryDeviceType : String? = device.secondaryDeviceType
+      val status : Int = device.status
+      // methods called on object before sending through channel
+      val isGroupOwner : Boolean = device.isGroupOwner()
+      val isServiceDiscoveryCapable : Boolean = device.isServiceDiscoveryCapable()
+      val wpsDisplaySupported : Boolean= device.wpsDisplaySupported()
+      val wpsKeypadSupported : Boolean= device.wpsKeypadSupported()
+      val wpsPbcSupported : Boolean= device.wpsPbcSupported()
+    }
+    return Gson().toJson(dev)
+  }
+
   fun requestGroupInfo(result: Result) {
     wifimanager.requestGroupInfo(wifichannel, WifiP2pManager.GroupInfoListener { group: WifiP2pGroup? ->
       if (group != null) {
-        var clients: String = ""
-        for (device: WifiP2pDevice in group.clientList) {
-          clients = clients + "{\"deviceName\": \"${device.deviceName}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}, "
-        }
-        if (clients.length > 0) {
-          clients = clients.subSequence(0, clients.length-2).toString()
-        }
+        var clients = jsonClientList(group)
         Log.d(TAG, "FlutterP2pConnection: groupInfo={isGroupOwner: \"${group.isGroupOwner}\", passphrase: \"${group.passphrase}\", groupNetworkName: \"${group.networkName}\", \"clients\": \"${group.clientList.toString()}\"}")
         result.success("{\"isGroupOwner\": ${group.isGroupOwner}, \"passPhrase\": \"${group.passphrase}\", \"groupNetworkName\": \"${group.networkName}\", \"clients\": [${clients}]}")
       }
@@ -405,10 +437,10 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
     wifimanager.requestPeers(wifichannel, WifiP2pManager.PeerListListener { peers: WifiP2pDeviceList ->
       var list: MutableList<String> = mutableListOf()
       for (device: WifiP2pDevice in peers.deviceList) {
-        list.add("{\"deviceName\": \"${device.deviceName}\", \"deviceAddress\": \"${device.deviceAddress}\", \"isGroupOwner\": ${device.isGroupOwner}, \"isServiceDiscoveryCapable\": ${device.isServiceDiscoveryCapable}, \"primaryDeviceType\": \"${device.primaryDeviceType}\", \"secondaryDeviceType\": \"${device.secondaryDeviceType}\", \"status\": ${device.status}}")
+        list.add(jsonClient(device))
       }
       EfoundPeers = list
-      //Log.d(TAG, list.toString())
+      Log.d(TAG, "FlutterP2P : Joris Peers  " + list.toString())
     })
   }
 
@@ -425,6 +457,7 @@ class FlutterP2pConnectionPlugin: FlutterPlugin, MethodCallHandler, ActivityAwar
           handler.post {
             if (peers != EfoundPeers.toString()) {
               peers = EfoundPeers.toString()
+              Log.d(TAG, "Peers are " + peers.toString())
               eventSink?.success(EfoundPeers)
             }
           }

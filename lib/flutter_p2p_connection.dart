@@ -1029,7 +1029,7 @@ class DiscoveredPeers {
   final bool isGroupOwner;
   final bool isServiceDiscoveryCapable;
   final String primaryDeviceType;
-  final String secondaryDeviceType;
+  final String? secondaryDeviceType;
   final int status;
   const DiscoveredPeers({
     required this.deviceName,

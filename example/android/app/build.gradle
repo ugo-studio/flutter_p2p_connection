@@ -61,6 +61,7 @@ android {
             signingConfig signingConfigs.debug
         }
     }
+    namespace = 'com.ugo.studio.plugins.flutter_p2p_connection_example'
 }
 
 flutter {
