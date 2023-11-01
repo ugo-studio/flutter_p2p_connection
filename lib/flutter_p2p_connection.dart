@@ -261,6 +261,8 @@ class FlutterP2pConnection {
     );
   }
 
+  static void _doNothing(){}
+
   Future<bool> startSocket({
     required String groupOwnerAddress,
     required String downloadPath,
@@ -269,7 +271,7 @@ class FlutterP2pConnection {
     required void Function(String name, String address) onConnect,
     required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic req) receiveString,
-    void Function() onCloseSocket = () {},
+    void Function() onCloseSocket = _doNothing,
   }) async {
     if (groupOwnerAddress.isEmpty) return false;
     try {
@@ -394,7 +396,7 @@ class FlutterP2pConnection {
     required void Function(String address) onConnect,
     required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic req) receiveString,
-    void Function() onCloseSocket = () {},
+    void Function() onCloseSocket = _doNothing,
   }) async {
     if (groupOwnerAddress.isEmpty) return false;
     try {
