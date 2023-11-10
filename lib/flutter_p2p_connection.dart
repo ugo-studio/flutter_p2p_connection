@@ -91,15 +91,31 @@ class FlutterP2pConnection {
   // }
 
   Future<List<DiscoveredPeers>> fetchPeers() async {
-    List<String>? list =
+    String peers =
         await FlutterP2pConnectionPlatform.instance.fetchPeers();
-    if (list == null) return [];
-    List<DiscoveredPeers>? peers = [];
-    for (String p in list) {
-      Map<String, dynamic>? json = jsonDecode(p);
-      if (json != null) {
-        peers.add(
-          DiscoveredPeers(
+    if (peers == null) return [];
+    Iterable l = jsonDecode(peers);
+    List<DiscoveredPeers> result = l.map(
+            (json) => DiscoveredPeers(
+          deviceName: json["deviceName"],
+          deviceAddress: json["deviceAddress"],
+          isGroupOwner: json["isGroupOwner"],
+          isServiceDiscoveryCapable: json["isServiceDiscoveryCapable"],
+          primaryDeviceType: json["primaryDeviceType"],
+          secondaryDeviceType: json["secondaryDeviceType"],
+          status: json["status"],
+        )
+    ).toList();
+    return result;
+  }
+
+  Stream<List<DiscoveredPeers>> streamPeers() {
+    const peersChannel = EventChannel("flutter_p2p_connection_foundPeers");
+    return peersChannel.receiveBroadcastStream().map((peers) {
+      if (peers == null) return [];
+      Iterable l = jsonDecode(peers);
+      List<DiscoveredPeers> result = l.map(
+              (json) => DiscoveredPeers(
             deviceName: json["deviceName"],
             deviceAddress: json["deviceAddress"],
             isGroupOwner: json["isGroupOwner"],
@@ -107,35 +123,9 @@ class FlutterP2pConnection {
             primaryDeviceType: json["primaryDeviceType"],
             secondaryDeviceType: json["secondaryDeviceType"],
             status: json["status"],
-          ),
-        );
-      }
-    }
-    return peers;
-  }
-
-  Stream<List<DiscoveredPeers>> streamPeers() {
-    const peersChannel = EventChannel("flutter_p2p_connection_foundPeers");
-    return peersChannel.receiveBroadcastStream().map((peers) {
-      List<DiscoveredPeers> p = [];
-      if (peers == null) return p;
-      for (var obj in peers) {
-        Map<String, dynamic>? json = jsonDecode(obj);
-        if (json != null) {
-          p.add(
-            DiscoveredPeers(
-              deviceName: json["deviceName"],
-              deviceAddress: json["deviceAddress"],
-              isGroupOwner: json["isGroupOwner"],
-              isServiceDiscoveryCapable: json["isServiceDiscoveryCapable"],
-              primaryDeviceType: json["primaryDeviceType"],
-              secondaryDeviceType: json["secondaryDeviceType"],
-              status: json["status"],
-            ),
-          );
-        }
-      }
-      return p;
+        )
+      ).toList();
+      return result;
     });
   }
 
@@ -168,6 +158,7 @@ class FlutterP2pConnection {
             ));
           }
         }
+
         bool isConnected = false;
         if (json["isGroupOwner"] == true) {
           if (json["isConnected"] == true && clients.isNotEmpty) {
@@ -199,37 +190,13 @@ class FlutterP2pConnection {
     });
   }
 
-  Future<bool> register() async {
-    if ((await FlutterP2pConnectionPlatform.instance.resume()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> register() async =>(await FlutterP2pConnectionPlatform.instance.resume()) == true;
 
-  Future<bool> unregister() async {
-    if ((await FlutterP2pConnectionPlatform.instance.pause()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> unregister() async =>(await FlutterP2pConnectionPlatform.instance.pause()) == true;
 
-  Future<bool> createGroup() async {
-    if ((await FlutterP2pConnectionPlatform.instance.createGroup()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> createGroup() async =>(await FlutterP2pConnectionPlatform.instance.createGroup()) == true;
 
-  Future<bool> removeGroup() async {
-    if ((await FlutterP2pConnectionPlatform.instance.removeGroup()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> removeGroup() async  => (await FlutterP2pConnectionPlatform.instance.removeGroup()) == true;
 
   Future<WifiP2PGroupInfo?> groupInfo() async {
     String? gi = await FlutterP2pConnectionPlatform.instance
@@ -1059,6 +1026,8 @@ class Client {
     required this.secondaryDeviceType,
     required this.status,
   });
+
+  // TODO add factory from json Map<String>
 }
 
 class WifiP2PGroupInfo {
