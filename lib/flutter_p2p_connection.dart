@@ -91,7 +91,7 @@ class FlutterP2pConnection {
   // }
 
   Future<List<DiscoveredPeers>> fetchPeers() async {
-    String peers =
+    String? peers =
         await FlutterP2pConnectionPlatform.instance.fetchPeers();
     if (peers == null) return [];
     Iterable l = jsonDecode(peers);

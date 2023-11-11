@@ -64,7 +64,7 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     throw UnimplementedError('groupInfo() has not been implemented.');
   }
 
-  Future<List<String>?> fetchPeers() {
+  Future<String?> fetchPeers() {
     throw UnimplementedError('fetchPeers() has not been implemented.');
   }
 

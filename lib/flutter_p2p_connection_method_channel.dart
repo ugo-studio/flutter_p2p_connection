@@ -76,14 +76,9 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   }
 
   @override
-  Future<List<String>?> fetchPeers() async {
-    final peers = await methodChannel.invokeMethod<List<Object?>>("fetchPeers");
-    List<String>? p = [];
-    if (peers == null) return [];
-    for (var obj in peers) {
-      p.add(obj.toString());
-    }
-    return p;
+  Future<String?> fetchPeers() async {
+    final String? peers = await methodChannel.invokeMethod<String?>("fetchPeers");
+    return peers;
   }
 
   @override
