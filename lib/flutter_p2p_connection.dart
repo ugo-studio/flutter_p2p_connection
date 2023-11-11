@@ -1032,7 +1032,7 @@ class Client {
 
 class WifiP2PGroupInfo {
   final bool isGroupOwner;
-  final String passPhrase;
+  final String? passPhrase;
   final String groupNetworkName;
   final List<Client> clients;
   const WifiP2PGroupInfo({
