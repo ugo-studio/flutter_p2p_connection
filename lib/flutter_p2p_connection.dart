@@ -45,61 +45,53 @@ class FlutterP2pConnection {
     }
   }
 
-  Future<String?> getPlatformVersion() {
-    return FlutterP2pConnectionPlatform.instance.getPlatformVersion();
-  }
+  Future<String?> getPlatformVersion() =>
+    FlutterP2pConnectionPlatform.instance.getPlatformVersion();
 
-  Future<String?> getDeviceModel() {
-    return FlutterP2pConnectionPlatform.instance.getPlatformModel();
-  }
+  Future<String?> getDeviceModel() =>
+    FlutterP2pConnectionPlatform.instance.getPlatformModel();
 
-  Future<bool> initialize() async {
-    if ((await FlutterP2pConnectionPlatform.instance.initialize()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> initialize() async =>
+    (await FlutterP2pConnectionPlatform.instance.initialize()) == true;
 
-  Future<bool> discover() async {
-    if ((await FlutterP2pConnectionPlatform.instance.discover()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> discover() async =>
+    (await FlutterP2pConnectionPlatform.instance.discover()) == true;
 
-  Future<bool> stopDiscovery() async {
-    if ((await FlutterP2pConnectionPlatform.instance.stopDiscovery()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> stopDiscovery() async =>
+    (await FlutterP2pConnectionPlatform.instance.stopDiscovery()) == true;
 
-  Future<bool> connect(String address) async {
-    if ((await FlutterP2pConnectionPlatform.instance.connect(address)) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> connect(String address) async =>
+    (await FlutterP2pConnectionPlatform.instance.connect(address)) == true;
 
-  // Future<bool?> disconnect() {
-  //   return FlutterP2pConnectionPlatform.instance.disconnect();
-  // }
+  Future<bool?> disconnect() async =>
+      (await FlutterP2pConnectionPlatform.instance.disconnect()) == true;
 
   Future<List<DiscoveredPeers>> fetchPeers() async {
-    List<String>? list =
+    String? peers =
         await FlutterP2pConnectionPlatform.instance.fetchPeers();
-    if (list == null) return [];
-    List<DiscoveredPeers>? peers = [];
-    for (String p in list) {
-      Map<String, dynamic>? json = jsonDecode(p);
-      if (json != null) {
-        peers.add(
-          DiscoveredPeers(
+    if (peers == null) return [];
+    Iterable l = jsonDecode(peers);
+    List<DiscoveredPeers> result = l.map(
+            (json) => DiscoveredPeers(
+          deviceName: json["deviceName"],
+          deviceAddress: json["deviceAddress"],
+          isGroupOwner: json["isGroupOwner"],
+          isServiceDiscoveryCapable: json["isServiceDiscoveryCapable"],
+          primaryDeviceType: json["primaryDeviceType"],
+          secondaryDeviceType: json["secondaryDeviceType"],
+          status: json["status"],
+        )
+    ).toList();
+    return result;
+  }
+
+  Stream<List<DiscoveredPeers>> streamPeers() {
+    const peersChannel = EventChannel("flutter_p2p_connection_foundPeers");
+    return peersChannel.receiveBroadcastStream().map((peers) {
+      if (peers == null) return [];
+      Iterable l = jsonDecode(peers);
+      List<DiscoveredPeers> result = l.map(
+              (json) => DiscoveredPeers(
             deviceName: json["deviceName"],
             deviceAddress: json["deviceAddress"],
             isGroupOwner: json["isGroupOwner"],
@@ -107,35 +99,9 @@ class FlutterP2pConnection {
             primaryDeviceType: json["primaryDeviceType"],
             secondaryDeviceType: json["secondaryDeviceType"],
             status: json["status"],
-          ),
-        );
-      }
-    }
-    return peers;
-  }
-
-  Stream<List<DiscoveredPeers>> streamPeers() {
-    const peersChannel = EventChannel("flutter_p2p_connection_foundPeers");
-    return peersChannel.receiveBroadcastStream().map((peers) {
-      List<DiscoveredPeers> p = [];
-      if (peers == null) return p;
-      for (var obj in peers) {
-        Map<String, dynamic>? json = jsonDecode(obj);
-        if (json != null) {
-          p.add(
-            DiscoveredPeers(
-              deviceName: json["deviceName"],
-              deviceAddress: json["deviceAddress"],
-              isGroupOwner: json["isGroupOwner"],
-              isServiceDiscoveryCapable: json["isServiceDiscoveryCapable"],
-              primaryDeviceType: json["primaryDeviceType"],
-              secondaryDeviceType: json["secondaryDeviceType"],
-              status: json["status"],
-            ),
-          );
-        }
-      }
-      return p;
+        )
+      ).toList();
+      return result;
     });
   }
 
@@ -168,6 +134,7 @@ class FlutterP2pConnection {
             ));
           }
         }
+
         bool isConnected = false;
         if (json["isGroupOwner"] == true) {
           if (json["isConnected"] == true && clients.isNotEmpty) {
@@ -199,37 +166,17 @@ class FlutterP2pConnection {
     });
   }
 
-  Future<bool> register() async {
-    if ((await FlutterP2pConnectionPlatform.instance.resume()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> register() async =>
+      (await FlutterP2pConnectionPlatform.instance.resume()) == true;
 
-  Future<bool> unregister() async {
-    if ((await FlutterP2pConnectionPlatform.instance.pause()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> unregister() async =>
+      (await FlutterP2pConnectionPlatform.instance.pause()) == true;
 
-  Future<bool> createGroup() async {
-    if ((await FlutterP2pConnectionPlatform.instance.createGroup()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> createGroup() async =>
+      (await FlutterP2pConnectionPlatform.instance.createGroup()) == true;
 
-  Future<bool> removeGroup() async {
-    if ((await FlutterP2pConnectionPlatform.instance.removeGroup()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> removeGroup() async  =>
+      (await FlutterP2pConnectionPlatform.instance.removeGroup()) == true;
 
   Future<WifiP2PGroupInfo?> groupInfo() async {
     String? gi = await FlutterP2pConnectionPlatform.instance
@@ -261,6 +208,8 @@ class FlutterP2pConnection {
     );
   }
 
+  static void _doNothing(){}
+
   Future<bool> startSocket({
     required String groupOwnerAddress,
     required String downloadPath,
@@ -269,7 +218,7 @@ class FlutterP2pConnection {
     required void Function(String name, String address) onConnect,
     required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic req) receiveString,
-    void Function() onCloseSocket = () {},
+    void Function() onCloseSocket = _doNothing,
   }) async {
     if (groupOwnerAddress.isEmpty) return false;
     try {
@@ -394,7 +343,7 @@ class FlutterP2pConnection {
     required void Function(String address) onConnect,
     required void Function(TransferUpdate transfer) transferUpdate,
     required void Function(dynamic req) receiveString,
-    void Function() onCloseSocket = () {},
+    void Function() onCloseSocket = _doNothing,
   }) async {
     if (groupOwnerAddress.isEmpty) return false;
     try {
@@ -932,15 +881,8 @@ class FlutterP2pConnection {
     }
   }
 
-  Future<bool> checkLocationPermission() async {
-    if ((await FlutterP2pConnectionPlatform.instance
-            .checkLocationPermission()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> checkLocationPermission() async =>
+      (await FlutterP2pConnectionPlatform.instance.checkLocationPermission()) == true;
 
   Future<bool> askLocationPermission() async {
     PermissionStatus status = await Permission.location.request();
@@ -959,42 +901,18 @@ class FlutterP2pConnection {
     return false;
   }
 
-  Future<bool> checkGpsEnabled() async {
-    if ((await FlutterP2pConnectionPlatform.instance.checkGpsEnabled()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> checkGpsEnabled() async =>
+    await FlutterP2pConnectionPlatform.instance.checkGpsEnabled() == true;
 
-  Future<bool> enableLocationServices() async {
-    if ((await FlutterP2pConnectionPlatform.instance
-            .enableLocationServices()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> enableLocationServices() async =>
+      await FlutterP2pConnectionPlatform.instance.enableLocationServices()
+          == true;
 
-  Future<bool> checkWifiEnabled() async {
-    if ((await FlutterP2pConnectionPlatform.instance.checkWifiEnabled()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> checkWifiEnabled() async =>
+      await FlutterP2pConnectionPlatform.instance.checkWifiEnabled() == true;
 
-  Future<bool> enableWifiServices() async {
-    if ((await FlutterP2pConnectionPlatform.instance.enableWifiServices()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> enableWifiServices() async =>
+      await FlutterP2pConnectionPlatform.instance.enableWifiServices() == true;
 
   Future<bool> checkStoragePermission() async {
     PermissionStatus status = await Permission.storage.status;
@@ -1002,11 +920,8 @@ class FlutterP2pConnection {
     return false;
   }
 
-  Future<bool> askStoragePermission() async {
-    PermissionStatus status = await Permission.storage.request();
-    if (status.isGranted) return true;
-    return false;
-  }
+  Future<bool> askStoragePermission() async =>
+      (await Permission.storage.request()).isGranted;
 
   Future<bool> askStorageAndLocationPermission() async {
     Map<Permission, PermissionStatus> statuses = await [
@@ -1026,8 +941,8 @@ class DiscoveredPeers {
   final String deviceAddress;
   final bool isGroupOwner;
   final bool isServiceDiscoveryCapable;
-  final String primaryDeviceType;
-  final String secondaryDeviceType;
+  final String? primaryDeviceType;
+  final String? secondaryDeviceType;
   final int status;
   const DiscoveredPeers({
     required this.deviceName,
@@ -1045,8 +960,8 @@ class Client {
   final String deviceAddress;
   final bool isGroupOwner;
   final bool isServiceDiscoveryCapable;
-  final String primaryDeviceType;
-  final String secondaryDeviceType;
+  final String? primaryDeviceType;
+  final String? secondaryDeviceType;
   final int status;
   const Client({
     required this.deviceName,
@@ -1057,11 +972,13 @@ class Client {
     required this.secondaryDeviceType,
     required this.status,
   });
+
+  // TODO add factory from json Map<String>
 }
 
 class WifiP2PGroupInfo {
   final bool isGroupOwner;
-  final String passPhrase;
+  final String? passPhrase;
   final String groupNetworkName;
   final List<Client> clients;
   const WifiP2PGroupInfo({

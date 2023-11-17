@@ -93,6 +93,9 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
           print(
               "ID: ${transfer.id}, FILENAME: ${transfer.filename}, PATH: ${transfer.path}, COUNT: ${transfer.count}, TOTAL: ${transfer.total}, COMPLETED: ${transfer.completed}, FAILED: ${transfer.failed}, RECEIVING: ${transfer.receiving}");
         },
+        onCloseSocket: () {
+          print("close connection");
+        },
         receiveString: (req) async {
           snack(req);
         },
@@ -110,6 +113,9 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         deleteOnError: true,
         onConnect: (address) {
           snack("connected to socket: $address");
+        },
+        onCloseSocket: (){
+          snack("closed to socket");
         },
         transferUpdate: (transfer) {
           // if (transfer.count == 0) transfer.cancelToken?.cancel();
