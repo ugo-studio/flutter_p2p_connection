@@ -45,50 +45,26 @@ class FlutterP2pConnection {
     }
   }
 
-  Future<String?> getPlatformVersion() {
-    return FlutterP2pConnectionPlatform.instance.getPlatformVersion();
-  }
+  Future<String?> getPlatformVersion() =>
+    FlutterP2pConnectionPlatform.instance.getPlatformVersion();
 
-  Future<String?> getDeviceModel() {
-    return FlutterP2pConnectionPlatform.instance.getPlatformModel();
-  }
+  Future<String?> getDeviceModel() =>
+    FlutterP2pConnectionPlatform.instance.getPlatformModel();
 
-  Future<bool> initialize() async {
-    if ((await FlutterP2pConnectionPlatform.instance.initialize()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> initialize() async =>
+    (await FlutterP2pConnectionPlatform.instance.initialize()) == true;
 
-  Future<bool> discover() async {
-    if ((await FlutterP2pConnectionPlatform.instance.discover()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> discover() async =>
+    (await FlutterP2pConnectionPlatform.instance.discover()) == true;
 
-  Future<bool> stopDiscovery() async {
-    if ((await FlutterP2pConnectionPlatform.instance.stopDiscovery()) == true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> stopDiscovery() async =>
+    (await FlutterP2pConnectionPlatform.instance.stopDiscovery()) == true;
 
-  Future<bool> connect(String address) async {
-    if ((await FlutterP2pConnectionPlatform.instance.connect(address)) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> connect(String address) async =>
+    (await FlutterP2pConnectionPlatform.instance.connect(address)) == true;
 
-  // Future<bool?> disconnect() {
-  //   return FlutterP2pConnectionPlatform.instance.disconnect();
-  // }
+  Future<bool?> disconnect() async =>
+      (await FlutterP2pConnectionPlatform.instance.disconnect()) == true;
 
   Future<List<DiscoveredPeers>> fetchPeers() async {
     String? peers =
@@ -190,13 +166,17 @@ class FlutterP2pConnection {
     });
   }
 
-  Future<bool> register() async =>(await FlutterP2pConnectionPlatform.instance.resume()) == true;
+  Future<bool> register() async =>
+      (await FlutterP2pConnectionPlatform.instance.resume()) == true;
 
-  Future<bool> unregister() async =>(await FlutterP2pConnectionPlatform.instance.pause()) == true;
+  Future<bool> unregister() async =>
+      (await FlutterP2pConnectionPlatform.instance.pause()) == true;
 
-  Future<bool> createGroup() async =>(await FlutterP2pConnectionPlatform.instance.createGroup()) == true;
+  Future<bool> createGroup() async =>
+      (await FlutterP2pConnectionPlatform.instance.createGroup()) == true;
 
-  Future<bool> removeGroup() async  => (await FlutterP2pConnectionPlatform.instance.removeGroup()) == true;
+  Future<bool> removeGroup() async  =>
+      (await FlutterP2pConnectionPlatform.instance.removeGroup()) == true;
 
   Future<WifiP2PGroupInfo?> groupInfo() async {
     String? gi = await FlutterP2pConnectionPlatform.instance
@@ -901,15 +881,8 @@ class FlutterP2pConnection {
     }
   }
 
-  Future<bool> checkLocationPermission() async {
-    if ((await FlutterP2pConnectionPlatform.instance
-            .checkLocationPermission()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> checkLocationPermission() async =>
+      (await FlutterP2pConnectionPlatform.instance.checkLocationPermission()) == true;
 
   Future<bool> askLocationPermission() async {
     PermissionStatus status = await Permission.location.request();
@@ -928,42 +901,18 @@ class FlutterP2pConnection {
     return false;
   }
 
-  Future<bool> checkGpsEnabled() async {
-    if ((await FlutterP2pConnectionPlatform.instance.checkGpsEnabled()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> checkGpsEnabled() async =>
+    await FlutterP2pConnectionPlatform.instance.checkGpsEnabled() == true;
 
-  Future<bool> enableLocationServices() async {
-    if ((await FlutterP2pConnectionPlatform.instance
-            .enableLocationServices()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> enableLocationServices() async =>
+      await FlutterP2pConnectionPlatform.instance.enableLocationServices()
+          == true;
 
-  Future<bool> checkWifiEnabled() async {
-    if ((await FlutterP2pConnectionPlatform.instance.checkWifiEnabled()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> checkWifiEnabled() async =>
+      await FlutterP2pConnectionPlatform.instance.checkWifiEnabled() == true;
 
-  Future<bool> enableWifiServices() async {
-    if ((await FlutterP2pConnectionPlatform.instance.enableWifiServices()) ==
-        true) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  Future<bool> enableWifiServices() async =>
+      await FlutterP2pConnectionPlatform.instance.enableWifiServices() == true;
 
   Future<bool> checkStoragePermission() async {
     PermissionStatus status = await Permission.storage.status;
@@ -971,11 +920,8 @@ class FlutterP2pConnection {
     return false;
   }
 
-  Future<bool> askStoragePermission() async {
-    PermissionStatus status = await Permission.storage.request();
-    if (status.isGranted) return true;
-    return false;
-  }
+  Future<bool> askStoragePermission() async =>
+      (await Permission.storage.request()).isGranted;
 
   Future<bool> askStorageAndLocationPermission() async {
     Map<Permission, PermissionStatus> statuses = await [
