@@ -6,7 +6,7 @@ repository: https://github.com/ugo-studio/flutter_p2p_connection
 issue_tracker: https://github.com/ugo-studio/flutter_p2p_connection/issues
 
 environment:
-  sdk: ^3.5.3
+  sdk: ^3.5.0
   flutter: '>=3.3.0'
 
 dependencies:
