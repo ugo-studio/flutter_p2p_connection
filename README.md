@@ -39,12 +39,6 @@ FlutterP2pConnection().checkStoragePermission();
 // request storage permission
 FlutterP2pConnection().askStoragePermission();
 
-// check if location permission is granted
-FlutterP2pConnection().checkLocationPermission();
-
-// request location permission
-FlutterP2pConnection().askLocationPermission();
-
 // check if location is enabled
 FlutterP2pConnection().checkLocationEnabled();
 
@@ -56,6 +50,9 @@ FlutterP2pConnection().checkWifiEnabled();
 
 // enable wifi
 FlutterP2pConnection().enableWifiServices();
+
+// ask all permissions required for group creation and connections (nearbyWifiDevices & location)
+FlutterP2pConnection().askConnectionPermissions();
 ```
 
 ### Register / unregister from WiFi events

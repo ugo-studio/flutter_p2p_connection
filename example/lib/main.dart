@@ -31,10 +31,9 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   final TextEditingController msgText = TextEditingController();
   final _flutterP2pConnectionPlugin = FlutterP2pConnection();
+
   List<DiscoveredPeers> peers = [];
   WifiP2PInfo? wifiP2PInfo;
-  StreamSubscription<WifiP2PInfo>? _streamWifiInfo;
-  StreamSubscription<List<DiscoveredPeers>>? _streamPeers;
 
   @override
   void initState() {
@@ -62,13 +61,12 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   void _init() async {
     await _flutterP2pConnectionPlugin.initialize();
     await _flutterP2pConnectionPlugin.register();
-    _streamWifiInfo =
-        _flutterP2pConnectionPlugin.streamWifiP2PInfo().listen((event) {
+    _flutterP2pConnectionPlugin.streamWifiP2PInfo().listen((event) {
       setState(() {
         wifiP2PInfo = event;
       });
     });
-    _streamPeers = _flutterP2pConnectionPlugin.streamPeers().listen((event) {
+    _flutterP2pConnectionPlugin.streamPeers().listen((event) {
       setState(() {
         peers = event;
       });
@@ -114,7 +112,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
         onConnect: (address) {
           snack("connected to socket: $address");
         },
-        onCloseSocket: (){
+        onCloseSocket: () {
           snack("closed to socket");
         },
         transferUpdate: (transfer) {
@@ -280,32 +278,41 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
             ),
             ElevatedButton(
               onPressed: () async {
-                snack((await _flutterP2pConnectionPlugin.checkLocationEnabled())
-                    ? "enabled"
-                    : "diabled");
-              },
-              child: const Text("check location enabled"),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                snack((await _flutterP2pConnectionPlugin.checkWifiEnabled())
-                    ? "enabled"
-                    : "diabled");
-              },
-              child: const Text("check wifi enabled"),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                print(
-                    await _flutterP2pConnectionPlugin.askLocationPermission());
-              },
-              child: const Text("ask location permission"),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                print(await _flutterP2pConnectionPlugin.askStoragePermission());
+                snack(await _flutterP2pConnectionPlugin.askStoragePermission()
+                    ? "granted"
+                    : "denied");
               },
               child: const Text("ask storage permission"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                snack(
+                    await _flutterP2pConnectionPlugin.askConnectionPermissions()
+                        ? "granted"
+                        : "denied");
+              },
+              child: const Text(
+                "ask required permissions for connection (nearbyWifiDevices & location)",
+                textAlign: TextAlign.center,
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                snack(await _flutterP2pConnectionPlugin.checkLocationEnabled()
+                    ? "enabled"
+                    : "disabled");
+              },
+              child: const Text(
+                "check location enabled",
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                snack(await _flutterP2pConnectionPlugin.checkWifiEnabled()
+                    ? "enabled"
+                    : "disabled");
+              },
+              child: const Text("check wifi enabled"),
             ),
             ElevatedButton(
               onPressed: () async {

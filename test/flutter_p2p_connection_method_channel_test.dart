@@ -3,20 +3,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection_method_channel.dart';
 
 void main() {
-  MethodChannelFlutterP2pConnection platform =
-      MethodChannelFlutterP2pConnection();
-  const MethodChannel channel = MethodChannel('flutter_p2p_connection');
-
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  MethodChannelFlutterP2pConnection platform = MethodChannelFlutterP2pConnection();
+  const MethodChannel channel = MethodChannel('flutter_p2p_connection');
+
   setUp(() {
-    channel.setMockMethodCallHandler((MethodCall methodCall) async {
-      return '42';
-    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (MethodCall methodCall) async {
+        return '42';
+      },
+    );
   });
 
   tearDown(() {
-    channel.setMockMethodCallHandler(null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
   });
 
   test('getPlatformVersion', () async {

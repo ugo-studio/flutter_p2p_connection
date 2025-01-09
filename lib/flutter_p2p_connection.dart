@@ -46,42 +46,41 @@ class FlutterP2pConnection {
   }
 
   Future<String?> getPlatformVersion() =>
-    FlutterP2pConnectionPlatform.instance.getPlatformVersion();
+      FlutterP2pConnectionPlatform.instance.getPlatformVersion();
 
   Future<String?> getDeviceModel() =>
-    FlutterP2pConnectionPlatform.instance.getPlatformModel();
+      FlutterP2pConnectionPlatform.instance.getPlatformModel();
 
   Future<bool> initialize() async =>
-    (await FlutterP2pConnectionPlatform.instance.initialize()) == true;
+      (await FlutterP2pConnectionPlatform.instance.initialize()) == true;
 
   Future<bool> discover() async =>
-    (await FlutterP2pConnectionPlatform.instance.discover()) == true;
+      (await FlutterP2pConnectionPlatform.instance.discover()) == true;
 
   Future<bool> stopDiscovery() async =>
-    (await FlutterP2pConnectionPlatform.instance.stopDiscovery()) == true;
+      (await FlutterP2pConnectionPlatform.instance.stopDiscovery()) == true;
 
   Future<bool> connect(String address) async =>
-    (await FlutterP2pConnectionPlatform.instance.connect(address)) == true;
+      (await FlutterP2pConnectionPlatform.instance.connect(address)) == true;
 
   Future<bool?> disconnect() async =>
       (await FlutterP2pConnectionPlatform.instance.disconnect()) == true;
 
   Future<List<DiscoveredPeers>> fetchPeers() async {
-    String? peers =
-        await FlutterP2pConnectionPlatform.instance.fetchPeers();
+    String? peers = await FlutterP2pConnectionPlatform.instance.fetchPeers();
     if (peers == null) return [];
     Iterable l = jsonDecode(peers);
-    List<DiscoveredPeers> result = l.map(
-            (json) => DiscoveredPeers(
-          deviceName: json["deviceName"],
-          deviceAddress: json["deviceAddress"],
-          isGroupOwner: json["isGroupOwner"],
-          isServiceDiscoveryCapable: json["isServiceDiscoveryCapable"],
-          primaryDeviceType: json["primaryDeviceType"],
-          secondaryDeviceType: json["secondaryDeviceType"],
-          status: json["status"],
-        )
-    ).toList();
+    List<DiscoveredPeers> result = l
+        .map((json) => DiscoveredPeers(
+              deviceName: json["deviceName"],
+              deviceAddress: json["deviceAddress"],
+              isGroupOwner: json["isGroupOwner"],
+              isServiceDiscoveryCapable: json["isServiceDiscoveryCapable"],
+              primaryDeviceType: json["primaryDeviceType"],
+              secondaryDeviceType: json["secondaryDeviceType"],
+              status: json["status"],
+            ))
+        .toList();
     return result;
   }
 
@@ -90,17 +89,17 @@ class FlutterP2pConnection {
     return peersChannel.receiveBroadcastStream().map((peers) {
       if (peers == null) return [];
       Iterable l = jsonDecode(peers);
-      List<DiscoveredPeers> result = l.map(
-              (json) => DiscoveredPeers(
-            deviceName: json["deviceName"],
-            deviceAddress: json["deviceAddress"],
-            isGroupOwner: json["isGroupOwner"],
-            isServiceDiscoveryCapable: json["isServiceDiscoveryCapable"],
-            primaryDeviceType: json["primaryDeviceType"],
-            secondaryDeviceType: json["secondaryDeviceType"],
-            status: json["status"],
-        )
-      ).toList();
+      List<DiscoveredPeers> result = l
+          .map((json) => DiscoveredPeers(
+                deviceName: json["deviceName"],
+                deviceAddress: json["deviceAddress"],
+                isGroupOwner: json["isGroupOwner"],
+                isServiceDiscoveryCapable: json["isServiceDiscoveryCapable"],
+                primaryDeviceType: json["primaryDeviceType"],
+                secondaryDeviceType: json["secondaryDeviceType"],
+                status: json["status"],
+              ))
+          .toList();
       return result;
     });
   }
@@ -175,7 +174,7 @@ class FlutterP2pConnection {
   Future<bool> createGroup() async =>
       (await FlutterP2pConnectionPlatform.instance.createGroup()) == true;
 
-  Future<bool> removeGroup() async  =>
+  Future<bool> removeGroup() async =>
       (await FlutterP2pConnectionPlatform.instance.removeGroup()) == true;
 
   Future<WifiP2PGroupInfo?> groupInfo() async {
@@ -208,7 +207,7 @@ class FlutterP2pConnection {
     );
   }
 
-  static void _doNothing(){}
+  static void _doNothing() {}
 
   Future<bool> startSocket({
     required String groupOwnerAddress,
@@ -881,9 +880,10 @@ class FlutterP2pConnection {
     }
   }
 
+  // location permissions
   Future<bool> checkLocationPermission() async =>
-      (await FlutterP2pConnectionPlatform.instance.checkLocationPermission()) == true;
-
+      (await FlutterP2pConnectionPlatform.instance.checkLocationPermission()) ==
+      true;
   Future<bool> askLocationPermission() async {
     PermissionStatus status = await Permission.location.request();
     if (status.isGranted) return true;
@@ -902,37 +902,36 @@ class FlutterP2pConnection {
   }
 
   Future<bool> checkGpsEnabled() async =>
-    await FlutterP2pConnectionPlatform.instance.checkGpsEnabled() == true;
-
+      await FlutterP2pConnectionPlatform.instance.checkGpsEnabled() == true;
   Future<bool> enableLocationServices() async =>
-      await FlutterP2pConnectionPlatform.instance.enableLocationServices()
-          == true;
+      await FlutterP2pConnectionPlatform.instance.enableLocationServices() ==
+      true;
 
+  // wifi permissions
   Future<bool> checkWifiEnabled() async =>
       await FlutterP2pConnectionPlatform.instance.checkWifiEnabled() == true;
-
   Future<bool> enableWifiServices() async =>
       await FlutterP2pConnectionPlatform.instance.enableWifiServices() == true;
+  Future<bool> checkNearbyWifiDevicesPermission() async =>
+      (await Permission.nearbyWifiDevices.status).isGranted;
+  Future<bool> askNearbyWifiDevicesPermission() async =>
+      (await Permission.nearbyWifiDevices.request()).isGranted;
 
-  Future<bool> checkStoragePermission() async {
-    PermissionStatus status = await Permission.storage.status;
-    if (status.isGranted) return true;
-    return false;
-  }
-
+  // storage permissions
+  Future<bool> checkStoragePermission() async =>
+      (await Permission.storage.status).isGranted;
   Future<bool> askStoragePermission() async =>
       (await Permission.storage.request()).isGranted;
 
-  Future<bool> askStorageAndLocationPermission() async {
+  // all permissions required for group creation and connections
+  Future<bool> askConnectionPermissions() async {
     Map<Permission, PermissionStatus> statuses = await [
       Permission.location,
-      Permission.storage,
+      Permission.nearbyWifiDevices,
     ].request();
-    if ((statuses[Permission.location] as PermissionStatus).isGranted &&
-        (statuses[Permission.storage] as PermissionStatus).isGranted) {
-      return true;
-    }
-    return false;
+
+    return statuses[Permission.location] == PermissionStatus.granted &&
+        statuses[Permission.nearbyWifiDevices] == PermissionStatus.granted;
   }
 }
 
