@@ -24,87 +24,82 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     _instance = instance;
   }
 
-  Future<String?> getPlatformVersion() {
+  Future<String> getPlatformVersion() {
     throw UnimplementedError('platformVersion() has not been implemented.');
   }
 
-  Future<String?> getPlatformModel() {
+  Future<String> getPlatformModel() {
     throw UnimplementedError('getPlatformModel() has not been implemented.');
   }
 
-  Future<bool?> initialize() {
+  Future<bool> initialize() {
     throw UnimplementedError('initialize() has not been implemented.');
   }
 
-  Future<bool?> discover() {
-    throw UnimplementedError('discover() has not been implemented.');
+  Future<bool> dispose() {
+    throw UnimplementedError('dispose() has not been implemented.');
   }
 
-  Future<bool?> stopDiscovery() {
-    throw UnimplementedError('stopDiscovery() has not been implemented.');
+  Future<bool> startPeerDiscovery() {
+    throw UnimplementedError('startPeerDiscovery() has not been implemented.');
   }
 
-  Future<bool?> connect(String address) {
+  Future<bool> stopPeerDiscovery() {
+    throw UnimplementedError('stopPeerDiscovery() has not been implemented.');
+  }
+
+  Future<bool> connect(String address) {
     throw UnimplementedError('connect() has not been implemented.');
   }
 
-  Future<bool?> disconnect() {
+  Future<bool> disconnect() {
     throw UnimplementedError('disconnect() has not been implemented.');
   }
 
-  Future<bool?> createGroup() {
+  Future<bool> createGroup() {
     throw UnimplementedError('createGroup() has not been implemented.');
   }
 
-  Future<bool?> removeGroup() {
+  Future<bool> removeGroup() {
     throw UnimplementedError('removeGroup() has not been implemented.');
   }
 
-  Future<String?> groupInfo() {
-    throw UnimplementedError('groupInfo() has not been implemented.');
+  Future<Map<dynamic, dynamic>?> requestGroupInfo() {
+    throw UnimplementedError('requestGroupInfo() has not been implemented.');
   }
 
-  Future<String?> fetchPeers() {
+  Future<List<dynamic>> fetchPeers() {
     throw UnimplementedError('fetchPeers() has not been implemented.');
   }
 
-  Future<bool?> resume() {
-    throw UnimplementedError('resume() has not been implemented.');
+  Future<Map<dynamic, dynamic>?> fetchConnectionInfo() {
+    throw UnimplementedError('fetchConnectionInfo() has not been implemented.');
   }
 
-  Future<bool?> pause() {
-    throw UnimplementedError('pause() has not been implemented.');
+  Future<bool> checkP2pPermissions() {
+    throw UnimplementedError('checkP2pPermissions() has not been implemented.');
   }
 
-  Future<bool?> checkLocationPermission() {
+  Future<bool> askP2pPermissions() {
     throw UnimplementedError(
-        'checkLocationPermission() has not been implemented.');
+        'askLocationPermissions() has not been implemented.');
   }
 
-  Future<bool?> askLocationPermission() {
-    throw UnimplementedError(
-        'askLocationPermission() has not been implemented.');
-  }
-
-  Future<String?> checkLocationEnabled() {
+  Future<bool> checkLocationEnabled() {
     throw UnimplementedError(
         'checkLocationEnabled() has not been implemented.');
   }
 
-  Future<bool?> checkGpsEnabled() {
-    throw UnimplementedError('checkGpsEnabled() has not been implemented.');
-  }
-
-  Future<bool?> enableLocationServices() {
+  Future<bool> enableLocationServices() {
     throw UnimplementedError(
         'enableLocationServices() has not been implemented.');
   }
 
-  Future<bool?> checkWifiEnabled() {
+  Future<bool> checkWifiEnabled() {
     throw UnimplementedError('checkWifiEnabled() has not been implemented.');
   }
 
-  Future<bool?> enableWifiServices() {
+  Future<bool> enableWifiServices() {
     throw UnimplementedError('enableWifiServices() has not been implemented.');
   }
 }

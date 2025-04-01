@@ -16,8 +16,8 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('getPlatformVersion test', (WidgetTester tester) async {
-    final FlutterP2pConnection plugin = FlutterP2pConnection();
-    final String? version = await plugin.getPlatformVersion();
+    final FlutterP2pConnectionClient plugin = FlutterP2pConnectionClient();
+    final String? version = await plugin.utilities.getPlatformVersion();
     // The version string depends on the host platform running the test, so
     // just assert that some non-empty string is returned.
     expect(version?.isNotEmpty, true);

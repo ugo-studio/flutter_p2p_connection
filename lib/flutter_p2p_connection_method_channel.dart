@@ -10,133 +10,117 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   final methodChannel = const MethodChannel('flutter_p2p_connection');
 
   @override
-  Future<String?> getPlatformVersion() async {
-    final version =
-        await methodChannel.invokeMethod<String>('getPlatformVersion');
+  Future<String> getPlatformVersion() async {
+    String version = await methodChannel.invokeMethod('getPlatformVersion');
     return version;
   }
 
   @override
-  Future<String?> getPlatformModel() async {
-    final version =
-        await methodChannel.invokeMethod<String>('getPlatformModel');
-    if (version == null) return null;
-    return version.replaceFirst("model: ", "");
+  Future<String> getPlatformModel() async {
+    String model = await methodChannel.invokeMethod('getPlatformModel');
+    return model;
   }
 
   @override
-  Future<bool?> initialize() async {
-    final initialized = await methodChannel.invokeMethod<bool?>("initialize");
+  Future<bool> initialize() async {
+    bool initialized = await methodChannel.invokeMethod("initialize");
     return initialized;
   }
 
   @override
-  Future<bool?> discover() async {
-    final discovering = await methodChannel.invokeMethod<bool?>("discover");
-    return discovering;
+  Future<bool> dispose() async {
+    bool disposed = await methodChannel.invokeMethod("dispose");
+    return disposed;
   }
 
   @override
-  Future<bool?> stopDiscovery() async {
-    final stopped = await methodChannel.invokeMethod<bool?>("stopDiscovery");
-    return stopped;
-  }
-
-  @override
-  Future<bool?> connect(String address) async {
-    final arg = {
-      "address": address,
-    };
-    final connected = await methodChannel.invokeMethod<bool?>("connect", arg);
-    return connected;
-  }
-
-  @override
-  Future<bool?> disconnect() async {
-    final disconnected = await methodChannel.invokeMethod<bool?>("disconnect");
-    return disconnected;
-  }
-
-  @override
-  Future<bool?> createGroup() async {
-    final created = await methodChannel.invokeMethod<bool?>("createGroup");
+  Future<bool> createGroup() async {
+    final created = await methodChannel.invokeMethod("createGroup");
     return created;
   }
 
   @override
-  Future<bool?> removeGroup() async {
-    final removed = await methodChannel.invokeMethod<bool?>("removeGroup");
+  Future<bool> removeGroup() async {
+    final removed = await methodChannel.invokeMethod("removeGroup");
     return removed;
   }
 
   @override
-  Future<String?> groupInfo() async {
-    final info = await methodChannel.invokeMethod<String?>("groupInfo");
+  Future<Map<dynamic, dynamic>?> requestGroupInfo() async {
+    final info = await methodChannel.invokeMethod("requestGroupInfo");
     return info;
   }
 
   @override
-  Future<String?> fetchPeers() async {
-    final String? peers =
-        await methodChannel.invokeMethod<String?>("fetchPeers");
-    return peers;
+  Future<bool> startPeerDiscovery() async {
+    bool started = await methodChannel.invokeMethod("startPeerDiscovery");
+    return started;
   }
 
   @override
-  Future<bool?> resume() async {
-    final resume = await methodChannel.invokeMethod<bool?>("resume");
-    return resume;
+  Future<bool> stopPeerDiscovery() async {
+    bool stopped = await methodChannel.invokeMethod("stopPeerDiscovery");
+    return stopped;
   }
 
   @override
-  Future<bool?> pause() async {
-    final pause = await methodChannel.invokeMethod<bool?>("pause");
-    return pause;
+  Future<bool> connect(String address) async {
+    final connected =
+        await methodChannel.invokeMethod("connect", {"address": address});
+    return connected;
   }
 
   @override
-  Future<bool?> checkLocationPermission() async {
-    final res =
-        await methodChannel.invokeMethod<bool?>("checkLocationPermission");
-    return res;
+  Future<bool> disconnect() async {
+    final disconnected = await methodChannel.invokeMethod("disconnect");
+    return disconnected;
   }
 
   @override
-  Future<bool?> askLocationPermission() async {
-    final res =
-        await methodChannel.invokeMethod<bool?>("askLocationPermission");
-    return res;
+  Future<List<dynamic>> fetchPeers() async {
+    var peers = await methodChannel.invokeMethod("fetchPeers");
+    return List.castFrom(peers);
   }
 
   @override
-  Future<String?> checkLocationEnabled() async {
-    final res =
-        await methodChannel.invokeMethod<String?>("checkLocationEnabled");
-    return res;
+  Future<Map<dynamic, dynamic>?> fetchConnectionInfo() async {
+    var info = await methodChannel.invokeMethod("fetchConnectionInfo");
+    return info;
   }
 
   @override
-  Future<bool?> checkGpsEnabled() async {
-    final res = await methodChannel.invokeMethod<bool?>("checkGpsEnabled");
-    return res;
+  Future<bool> checkP2pPermissions() async {
+    bool granted = await methodChannel.invokeMethod("checkP2pPermissions");
+    return granted;
   }
 
   @override
-  Future<bool?> enableLocationServices() async {
-    final res =
-        await methodChannel.invokeMethod<bool?>("enableLocationServices");
-    return res;
+  Future<bool> askP2pPermissions() async {
+    bool granted = await methodChannel.invokeMethod("askP2pPermissions");
+    return granted;
   }
 
   @override
-  Future<bool?> checkWifiEnabled() async {
-    final res = await methodChannel.invokeMethod<bool?>("checkWifiEnabled");
-    return res;
+  Future<bool> checkLocationEnabled() async {
+    bool enabled = await methodChannel.invokeMethod("checkLocationEnabled");
+    return enabled;
   }
 
   @override
-  Future<bool?> enableWifiServices() async {
-    final res = await methodChannel.invokeMethod<bool?>("enableWifiServices");
-    return res;
+  Future<bool> enableLocationServices() async {
+    bool enabled = await methodChannel.invokeMethod("enableLocationServices");
+    return enabled;
+  }
+
+  @override
+  Future<bool> checkWifiEnabled() async {
+    bool enabled = await methodChannel.invokeMethod("checkWifiEnabled");
+    return enabled;
+  }
+
+  @override
+  Future<bool> enableWifiServices() async {
+    final enabled = await methodChannel.invokeMethod("enableWifiServices");
+    return enabled;
   }
 }
