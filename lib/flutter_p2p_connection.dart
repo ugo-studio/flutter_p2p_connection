@@ -72,26 +72,6 @@ class FlutterP2pConnectionHost extends FlutterP2pConnection {
   /// Creates a hotspot for P2P connections.
   Future<void> createHotspot() async {
     await FlutterP2pConnectionPlatform.instance.createHotspot();
-
-    // // Get network info
-    // WifiNetworkInfo info = await streamWifiNetworkInfo()
-    //     .timeout(_maxNetworkInfoPoolingTime, onTimeout: (evt) => evt.close())
-    //     .firstWhere(
-    //       (info) => info.hasInfo(),
-    //       orElse: () => WifiNetworkInfo(hostIp: null, bssid: null),
-    //     );
-    // if (info.hasInfo()) throw Exception('Failed to get network info');
-
-    // // create transport
-    // var transport = P2pTransportHost(
-    //   hostIp: info.hostIp!,
-    //   defaultPort: _transportDefaultPort,
-    // );
-    // await transport.start();
-
-    // _p2pTransport = transport;
-
-    // return transport;
   }
 
   /// Removes the hotspot and stops the transport.
@@ -132,26 +112,6 @@ class FlutterP2pConnectionClient extends FlutterP2pConnection {
   Future<void> connectToHotspot(String ssid, String password) async {
     await FlutterP2pConnectionPlatform.instance
         .connectToHotspot(ssid, password);
-
-    // // Get network info
-    // WifiNetworkInfo info = await streamWifiNetworkInfo()
-    //     .timeout(_maxNetworkInfoPoolingTime, onTimeout: (evt) => evt.close())
-    //     .firstWhere(
-    //       (info) => info.hasInfo(),
-    //       orElse: () => WifiNetworkInfo(hostIp: null, bssid: null),
-    //     );
-    // if (info.hasInfo()) throw Exception('Failed to get network info');
-
-    // // create transport
-    // var transport = P2pTransportClient(
-    //   hostIp: info.hostIp!,
-    //   defaultPort: _transportDefaultPort,
-    // );
-    // await transport.connect();
-
-    // _p2pTransport = transport;
-
-    // return transport;
   }
 
   /// Disconnects from the hotspot and stops the transport.

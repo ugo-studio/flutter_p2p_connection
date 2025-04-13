@@ -17,6 +17,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.11.0"
+  bluez:
+    dependency: transitive
+    description:
+      name: bluez
+      sha256: "61a7204381925896a374301498f2f5399e59827c6498ae1e924aaa598751b545"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.8.3"
   boolean_selector:
     dependency: transitive
     description:
@@ -118,6 +126,62 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_ble_peripheral:
+    dependency: transitive
+    description:
+      name: flutter_ble_peripheral
+      sha256: ba329874b295e3751666e3aebbf951aa759a6e7009754f5d980f668befa92b9b
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.6"
+  flutter_blue_plus:
+    dependency: transitive
+    description:
+      name: flutter_blue_plus
+      sha256: "2d926dbef0fd6c58d4be8fca9eaaf1ba747c0ccb8373ddd5386665317e26eb61"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.35.3"
+  flutter_blue_plus_android:
+    dependency: transitive
+    description:
+      name: flutter_blue_plus_android
+      sha256: c1d83f84b514e46345a8a58599c428f20b11e78379521e0d3b0611c7b7cbf2c1
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.0"
+  flutter_blue_plus_darwin:
+    dependency: transitive
+    description:
+      name: flutter_blue_plus_darwin
+      sha256: "8d0a0f11f83b13dda173396b7e4028b4e8656bc8dbbc82c26a7e49aafc62644b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.0"
+  flutter_blue_plus_linux:
+    dependency: transitive
+    description:
+      name: flutter_blue_plus_linux
+      sha256: "1d367ed378b2bd6c3b9685fda7044e1d2f169884802b7dec7badb31a99a72660"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.0"
+  flutter_blue_plus_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_blue_plus_platform_interface
+      sha256: "114f8e85a03a28a48d707a4df6cc9218e1f2005cf260c5e815e5585a00da5778"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.0"
+  flutter_blue_plus_web:
+    dependency: transitive
+    description:
+      name: flutter_blue_plus_web
+      sha256: "03023c259dbbba1bc5ce0fcd4e88b364f43eec01d45425f393023b9b2722cf4d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.1"
   flutter_driver:
     dependency: transitive
     description: flutter
@@ -158,6 +222,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  json_annotation:
+    dependency: transitive
+    description:
+      name: json_annotation
+      sha256: "1ce844379ca14835a50d2f019a3099f419082cfdd231cd86a142af94dd5c6bb1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.9.0"
   leak_tracker:
     dependency: transitive
     description:
@@ -326,6 +398,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.0.2"
+  rxdart:
+    dependency: transitive
+    description:
+      name: rxdart
+      sha256: "5c3004a4a8dbb94bd4bf5412a4def4acdaa12e12f269737a5751369e12d1a962"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.28.0"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -461,4 +541,4 @@ packages:
     version: "6.5.0"
 sdks:
   dart: ">=3.5.3 <4.0.0"
-  flutter: ">=3.18.0-18.0.pre.54"
+  flutter: ">=3.19.0"
