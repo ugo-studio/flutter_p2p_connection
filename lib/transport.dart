@@ -1,297 +1,243 @@
-// ignore_for_file: avoid_print
-
-import 'dart:io';
-import 'dart:convert';
 import 'dart:async';
-import 'package:uuid/uuid.dart';
-import 'package:web_socket_channel/io.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:convert';
+import 'dart:io';
 
-class P2pTransport {
-  final String ip;
-  final int port;
-  final String name;
-  final bool isHost;
+/// A simple message class that can be serialized to/from JSON.
+/// It includes basic fields: [sender], [type] and [content].
+/// Optionally, it can include a list of clients (useful for broadcasting the client list).
+class SocketMessage {
+  String sender;
+  String type;
+  String content;
+  List<String>? clients;
 
-  // Servers
-  HttpServer? _httpServer;
-  WebSocketChannel? _wsChannel;
-
-  // Host-specific properties
-  final List<WebSocketChannel> _connectedClients = [];
-  final Map<String, String> _clientNames = {};
-
-  // File transfer properties
-  final Map<String, String> _fileIdToPath = {};
-  final Uuid _uuid = Uuid();
-
-  P2pTransport({
-    required this.ip,
-    this.port = 8080,
-    required this.name,
-    required this.isHost,
+  SocketMessage({
+    required this.sender,
+    required this.type,
+    required this.content,
+    this.clients,
   });
 
-  Future<void> start() async {
-    // Always start an HTTP server for file transfers
-    await _startHttpServer();
-
-    if (isHost) {
-      await _startAsHost();
-    } else {
-      await _startAsClient();
-    }
+  /// Deserialize a SocketMessage instance from JSON.
+  factory SocketMessage.fromJson(Map<String, dynamic> json) {
+    return SocketMessage(
+      sender: json['sender'] ?? '',
+      type: json['type'] ?? '',
+      content: json['content'] ?? '',
+      clients:
+          json['clients'] != null ? List<String>.from(json['clients']) : null,
+    );
   }
 
-  Future<void> _startHttpServer() async {
-    _httpServer = await HttpServer.bind(ip, port + 1, shared: true);
-    print('HTTP server running on $ip:${port + 1}');
+  /// Serialize the SocketMessage instance to JSON.
+  Map<String, dynamic> toJson() => {
+        'sender': sender,
+        'type': type,
+        'content': content,
+        if (clients != null) 'clients': clients,
+      };
 
-    _httpServer!.listen((HttpRequest request) async {
-      if (request.uri.path.startsWith('/file/')) {
-        await _handleFileRequest(request);
-      } else {
-        request.response
-          ..statusCode = HttpStatus.notFound
-          ..write('Not found')
-          ..close();
-      }
-    });
-  }
-
-  Future<void> _handleFileRequest(HttpRequest request) async {
-    final fileId = request.uri.pathSegments.last;
-    final filePath = _fileIdToPath[fileId];
-
-    if (filePath == null) {
-      request.response
-        ..statusCode = HttpStatus.notFound
-        ..write('File not found')
-        ..close();
-      return;
-    }
-
-    final file = File(filePath);
-    if (!await file.exists()) {
-      request.response
-        ..statusCode = HttpStatus.notFound
-        ..write('File not found')
-        ..close();
-      return;
-    }
-
-    request.response.headers.contentType = ContentType.binary;
-    request.response.headers.add('Content-Disposition',
-        'attachment; filename="${filePath.split("/").last}"');
-
-    await file.openRead().pipe(request.response);
-  }
-
-  Future<void> _startAsHost() async {
-    // Create WebSocket server for connections
-    final server = await HttpServer.bind(ip, port, shared: true);
-    print('WebSocket server running on $ip:$port');
-
-    server.listen((HttpRequest request) {
-      if (request.uri.path == '/connect') {
-        // Get client name from query parameters
-        final clientName = request.uri.queryParameters['name'] ?? 'Unknown';
-
-        WebSocketTransformer.upgrade(request).then((WebSocket webSocket) {
-          final channel = IOWebSocketChannel(webSocket);
-          _connectedClients.add(channel);
-
-          // Store client name
-          _clientNames[channel.hashCode.toString()] = clientName;
-
-          print('Client connected: $clientName');
-
-          // Send welcome message
-          _sendMessage(channel, {
-            'type': 'system',
-            'message': 'Welcome to the server, $clientName',
-          });
-
-          // Broadcast new client joined
-          _broadcastMessage({
-            'type': 'system',
-            'message': '$clientName joined the chat',
-            'sender': 'system',
-          }, except: channel);
-
-          channel.stream.listen(
-            (message) => _handleClientMessage(channel, message),
-            onDone: () => _handleClientDisconnect(channel),
-            onError: (error) => print('Error: $error'),
-          );
-        });
-      } else {
-        request.response
-          ..statusCode = HttpStatus.notFound
-          ..write('Not found')
-          ..close();
-      }
-    });
-  }
-
-  void _handleClientMessage(WebSocketChannel channel, dynamic message) {
-    final Map<String, dynamic> data = jsonDecode(message);
-    final clientName = _clientNames[channel.hashCode.toString()] ?? 'Unknown';
-
-    // Add sender information
-    data['sender'] = clientName;
-
-    // Process the message
-    print('Message from $clientName: ${data['message']}');
-
-    // Broadcast the message to all clients
-    _broadcastMessage(data);
-  }
-
-  void _handleClientDisconnect(WebSocketChannel channel) {
-    final clientName = _clientNames[channel.hashCode.toString()] ?? 'Unknown';
-    _connectedClients.remove(channel);
-    _clientNames.remove(channel.hashCode.toString());
-
-    print('Client disconnected: $clientName');
-
-    // Broadcast client left
-    _broadcastMessage({
-      'type': 'system',
-      'message': '$clientName left the chat',
-      'sender': 'system',
-    });
-  }
-
-  void _broadcastMessage(Map<String, dynamic> data,
-      {WebSocketChannel? except}) {
-    final messageStr = jsonEncode(data);
-
-    for (var client in _connectedClients) {
-      if (except != null && client == except) continue;
-      _sendMessage(client, data);
-    }
-  }
-
-  Future<void> _startAsClient() async {
-    // Connect to host
-    final uri = Uri.parse('ws://${ip}:$port/connect?name=$name');
-    final wsUrl = uri.toString();
-    print(wsUrl);
-
-    try {
-      final socket = await WebSocket.connect(wsUrl);
-      _wsChannel = IOWebSocketChannel(socket);
-
-      print('Connected to host at $wsUrl');
-
-      _wsChannel!.stream.listen(
-        _handleHostMessage,
-        onDone: () => print('Disconnected from host'),
-        onError: (error) => print('Error: $error'),
-      );
-    } catch (e) {
-      print('Failed to connect to host: $e');
-      rethrow;
-    }
-  }
-
-  void _handleHostMessage(dynamic message) {
-    final Map<String, dynamic> data = jsonDecode(message);
-
-    if (data['type'] == 'file') {
-      print('File received: ${data['filename']}');
-      // Handle file info, can download later
-    } else {
-      print('Message: ${data['message']} from ${data['sender']}');
-    }
-  }
-
-  // Send text message
-  void sendTextMessage(String message) {
-    final data = {
-      'type': 'text',
-      'message': message,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    };
-
-    if (isHost) {
-      // Host broadcasts the message to all clients
-      data['sender'] = name;
-      _broadcastMessage(data);
-    } else if (_wsChannel != null) {
-      // Client sends message to host
-      _sendMessage(_wsChannel!, data);
-    }
-  }
-
-  // Share file
-  Future<void> shareFile(String filePath) async {
-    final file = File(filePath);
-    if (!await file.exists()) {
-      print('File not found: $filePath');
-      return;
-    }
-
-    final filename = filePath.split('/').last;
-    final fileSize = await file.length();
-    final fileId = _uuid.v4();
-
-    // Store file path with ID
-    _fileIdToPath[fileId] = filePath;
-
-    final fileData = {
-      'type': 'file',
-      'fileId': fileId,
-      'filename': filename,
-      'fileSize': fileSize,
-      'url': 'http://$ip:${port + 1}/file/$fileId',
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'sender': name,
-    };
-
-    if (isHost) {
-      // Host broadcasts file info to all clients
-      _broadcastMessage(fileData);
-    } else if (_wsChannel != null) {
-      // Client sends file info to host
-      _sendMessage(_wsChannel!, fileData);
-    }
-  }
-
-  // Download a file
-  Future<void> downloadFile(String url, String savePath) async {
-    try {
-      final httpClient = HttpClient();
-      final request = await httpClient.getUrl(Uri.parse(url));
-      final response = await request.close();
-
-      final file = File(savePath);
-      final sink = file.openWrite();
-      await response.pipe(sink);
-
-      print('File downloaded to $savePath');
-    } catch (e) {
-      print('Error downloading file: $e');
-    }
-  }
-
-  void _sendMessage(WebSocketChannel channel, Map<String, dynamic> data) {
-    channel.sink.add(jsonEncode(data));
-  }
-
-  Future<void> stop() async {
-    if (isHost) {
-      for (var client in _connectedClients) {
-        client.sink.close();
-      }
-      _connectedClients.clear();
-      _clientNames.clear();
-    } else if (_wsChannel != null) {
-      _wsChannel!.sink.close();
-    }
-
-    await _httpServer?.close();
-    print('P2P transport stopped');
+  @override
+  String toString() {
+    return jsonEncode(toJson());
   }
 }
+
+/// The host class for P2P transport. It creates a WebSocket server using the
+/// specified [hostIp] and [defaultPort]. If the port is already in use,
+/// it increments the port number (up to 10 attempts) until it succeeds.
+class P2pTransportHost {
+  final String hostIp;
+  final int defaultPort;
+  HttpServer? _server;
+  int? portInUse;
+  final List<WebSocket> _clients = [];
+
+  P2pTransportHost({required this.hostIp, required this.defaultPort});
+
+  /// Starts the WebSocket server on the appropriate port.
+  Future<void> start() async {
+    int attempts = 0;
+    int port = defaultPort;
+    while (attempts < 10) {
+      try {
+        _server = await HttpServer.bind(hostIp, port);
+        portInUse = port;
+        print("Server started on $hostIp:$portInUse");
+        break;
+      } catch (e) {
+        print("Port $port is in use, trying next port...");
+        port++;
+        attempts++;
+      }
+    }
+    if (_server == null) {
+      throw Exception("Could not bind to any port in the range.");
+    }
+
+    // Listen for incoming HTTP requests (which may be upgraded to WebSocket).
+    _server!.listen((HttpRequest request) {
+      if (WebSocketTransformer.isUpgradeRequest(request)) {
+        WebSocketTransformer.upgrade(request).then((WebSocket websocket) {
+          _handleClient(websocket);
+        });
+      } else {
+        // If not a WebSocket request, close the connection with an error code.
+        request.response
+          ..statusCode = HttpStatus.upgradeRequired
+          ..write("WebSocket connections only")
+          ..close();
+      }
+    });
+  }
+
+  /// Handles an individual client connection.
+  void _handleClient(WebSocket client) {
+    print("New client connected.");
+    _clients.add(client);
+
+    // Send the updated client list to all clients.
+    _broadcastClientList();
+
+    // Listen for messages coming from the client.
+    client.listen((data) {
+      try {
+        // Expect the message in JSON format.
+        var jsonData = jsonDecode(data);
+        var message = SocketMessage.fromJson(jsonData);
+        print("Received message from ${message.sender}: ${message.content}");
+        // Broadcast the message to other clients (excluding the sender).
+        _broadcastMessage(message, exclude: client);
+      } catch (e) {
+        print("Error parsing message: $e");
+      }
+    }, onDone: () {
+      print("Client disconnected.");
+      _clients.remove(client);
+      _broadcastClientList();
+    });
+  }
+
+  /// Broadcasts a given [message] to all connected clients.
+  /// You can optionally exclude one client via [exclude] (e.g., to avoid echoing the sender).
+  void _broadcastMessage(SocketMessage message, {WebSocket? exclude}) {
+    var msgString = jsonEncode(message.toJson());
+    for (var client in _clients) {
+      if (client != exclude) {
+        client.add(msgString);
+      }
+    }
+  }
+
+  /// Constructs and broadcasts the list of connected clients.
+  /// Here, client identifiers are represented as the string value of their hash code.
+  void _broadcastClientList() {
+    List<String> clientAddresses =
+        _clients.map((client) => client.hashCode.toString()).toList();
+    SocketMessage message = SocketMessage(
+      sender: "server",
+      type: "clientList",
+      content: "Updated client list",
+      clients: clientAddresses,
+    );
+    _broadcastMessage(message);
+  }
+
+  /// Stops the server and clears the client list.
+  Future<void> stop() async {
+    await _server?.close(force: true);
+    _clients.clear();
+  }
+}
+
+/// The client class for P2P transport. It attempts to establish a connection
+/// to the server at [hostIp] starting with the [defaultPort]. If the connection
+/// is not found, it increments the port number (up to 10 attempts) until a connection is made.
+class P2pTransportClient {
+  final String hostIp;
+  final int defaultPort;
+  WebSocket? _socket;
+
+  P2pTransportClient({required this.hostIp, required this.defaultPort});
+
+  /// Attempts to connect to the host server.
+  Future<void> connect() async {
+    int attempts = 0;
+    int port = defaultPort;
+    bool connected = false;
+    while (attempts < 10 && !connected) {
+      try {
+        _socket = await WebSocket.connect("ws://$hostIp:$port");
+        print("Connected to server at ws://$hostIp:$port");
+        connected = true;
+      } catch (e) {
+        print("Unable to connect at port $port. Trying next port...");
+        port++;
+        attempts++;
+      }
+    }
+    if (!connected) {
+      throw Exception("Could not connect to server on any port in the range.");
+    }
+
+    // Listen for messages from the server.
+    _socket!.listen((data) {
+      try {
+        var jsonData = jsonDecode(data);
+        var message = SocketMessage.fromJson(jsonData);
+        _handleServerMessage(message);
+      } catch (e) {
+        print("Error parsing server message: $e");
+      }
+    }, onDone: () {
+      print("Disconnected from server.");
+    });
+  }
+
+  /// Handles incoming messages from the server.
+  void _handleServerMessage(SocketMessage message) {
+    if (message.type == "clientList") {
+      print("Received updated client list: ${message.clients}");
+    } else {
+      print("Message from ${message.sender}: ${message.content}");
+    }
+  }
+
+  /// Sends a [message] to the host server.
+  void sendMessage(SocketMessage message) {
+    if (_socket != null && _socket!.readyState == WebSocket.open) {
+      _socket!.add(jsonEncode(message.toJson()));
+    } else {
+      print("Socket not connected.");
+    }
+  }
+
+  /// Disconnects from the host server.
+  Future<void> disconnect() async {
+    await _socket?.close();
+  }
+}
+
+/// --------------------------
+/// Example Usage:
+/// --------------------------
+///
+/// void main() async {
+///   // Start the host
+///   var host = P2pTransportHost(hostIp: '127.0.0.1', defaultPort: 8080);
+///   await host.start();
+///
+///   // Connect a client
+///   var client = P2pTransportClient(hostIp: '127.0.0.1', defaultPort: 8080);
+///   await client.connect();
+///
+///   // Send a message from client to host
+///   var message = SocketMessage(sender: 'client1', type: 'chat', content: 'Hello, world!');
+///   client.sendMessage(message);
+/// }
+/// 
+/// // Note: To run this code in a real-world scenario, you might execute the host
+/// // in one Dart isolate or process, and the client in another.
+/// 
+/// --------------------------
+

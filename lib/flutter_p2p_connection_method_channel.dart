@@ -1,13 +1,22 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-
+import 'package:flutter_p2p_connection/classes.dart';
 import 'flutter_p2p_connection_platform_interface.dart';
 
 /// An implementation of [FlutterP2pConnectionPlatform] that uses method channels.
 class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
-  final methodChannel = const MethodChannel('flutter_p2p_connection');
+  final MethodChannel methodChannel =
+      const MethodChannel('flutter_p2p_connection');
+
+  /// The event channel used for hotspot connection info events.
+  @visibleForTesting
+  final EventChannel eventChannel =
+      const EventChannel('flutter_p2p_connection_clientState');
+
+  Stream<HotspotClientState>? _hotspotClientState;
 
   @override
   Future<String> getPlatformVersion() async {
@@ -22,105 +31,87 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   }
 
   @override
-  Future<bool> initialize() async {
-    bool initialized = await methodChannel.invokeMethod("initialize");
-    return initialized;
+  Future<void> initialize() async {
+    await methodChannel.invokeMethod('initialize');
   }
 
   @override
-  Future<bool> dispose() async {
-    bool disposed = await methodChannel.invokeMethod("dispose");
-    return disposed;
+  Future<void> dispose() async {
+    await methodChannel.invokeMethod('dispose');
   }
 
   @override
-  Future<bool> createGroup() async {
-    final created = await methodChannel.invokeMethod("createGroup");
-    return created;
+  Future<void> createHotspot() async {
+    await methodChannel.invokeMethod('createHotspot');
   }
 
   @override
-  Future<bool> removeGroup() async {
-    final removed = await methodChannel.invokeMethod("removeGroup");
-    return removed;
+  Future<void> removeHotspot() async {
+    await methodChannel.invokeMethod('removeHotspot');
   }
 
   @override
-  Future<Map<dynamic, dynamic>?> requestGroupInfo() async {
-    final info = await methodChannel.invokeMethod("requestGroupInfo");
-    return info;
+  Future<HotspotInfo?> requestHotspotInfo() async {
+    final Map<dynamic, dynamic>? result =
+        await methodChannel.invokeMethod('requestHotspotInfo');
+    if (result == null) return null;
+    return HotspotInfo.fromMap(Map.castFrom(result));
   }
 
   @override
-  Future<bool> startPeerDiscovery() async {
-    bool started = await methodChannel.invokeMethod("startPeerDiscovery");
-    return started;
+  Future<void> connectToHotspot(String ssid, String password) async {
+    await methodChannel.invokeMethod('connectToHotspot', {
+      'ssid': ssid,
+      'password': password,
+    });
   }
 
   @override
-  Future<bool> stopPeerDiscovery() async {
-    bool stopped = await methodChannel.invokeMethod("stopPeerDiscovery");
-    return stopped;
-  }
-
-  @override
-  Future<bool> connect(String address) async {
-    final connected =
-        await methodChannel.invokeMethod("connect", {"address": address});
-    return connected;
-  }
-
-  @override
-  Future<bool> disconnect() async {
-    final disconnected = await methodChannel.invokeMethod("disconnect");
-    return disconnected;
-  }
-
-  @override
-  Future<List<dynamic>> fetchPeers() async {
-    var peers = await methodChannel.invokeMethod("fetchPeers");
-    return List.castFrom(peers);
-  }
-
-  @override
-  Future<Map<dynamic, dynamic>?> fetchConnectionInfo() async {
-    var info = await methodChannel.invokeMethod("fetchConnectionInfo");
-    return info;
+  Future<void> disconnectFromHotspot() async {
+    await methodChannel.invokeMethod('disconnectFromHotspot');
   }
 
   @override
   Future<bool> checkP2pPermissions() async {
-    bool granted = await methodChannel.invokeMethod("checkP2pPermissions");
-    return granted;
+    final bool? hasPermission =
+        await methodChannel.invokeMethod('checkP2pPermissions');
+    return hasPermission ?? false;
   }
 
   @override
-  Future<bool> askP2pPermissions() async {
-    bool granted = await methodChannel.invokeMethod("askP2pPermissions");
-    return granted;
+  Future<void> askP2pPermissions() async {
+    await methodChannel.invokeMethod('askP2pPermissions');
   }
 
   @override
   Future<bool> checkLocationEnabled() async {
-    bool enabled = await methodChannel.invokeMethod("checkLocationEnabled");
-    return enabled;
+    final bool? enabled =
+        await methodChannel.invokeMethod('checkLocationEnabled');
+    return enabled ?? false;
   }
 
   @override
-  Future<bool> enableLocationServices() async {
-    bool enabled = await methodChannel.invokeMethod("enableLocationServices");
-    return enabled;
+  Future<void> enableLocationServices() async {
+    await methodChannel.invokeMethod('enableLocationServices');
   }
 
   @override
   Future<bool> checkWifiEnabled() async {
-    bool enabled = await methodChannel.invokeMethod("checkWifiEnabled");
-    return enabled;
+    final bool? enabled = await methodChannel.invokeMethod('checkWifiEnabled');
+    return enabled ?? false;
   }
 
   @override
-  Future<bool> enableWifiServices() async {
-    final enabled = await methodChannel.invokeMethod("enableWifiServices");
-    return enabled;
+  Future<void> enableWifiServices() async {
+    await methodChannel.invokeMethod('enableWifiServices');
+  }
+
+  /// Returns a broadcast stream of [HotspotInfo] updates from the native platform.
+  @override
+  Stream<HotspotClientState> get hotspotClientState {
+    _hotspotClientState ??= eventChannel.receiveBroadcastStream().map(
+          (dynamic event) => HotspotClientState.fromMap(Map.castFrom(event)),
+        );
+    return _hotspotClientState!;
   }
 }

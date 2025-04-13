@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_p2p_connection/classes.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 
 class ClientPage extends StatefulWidget {
@@ -11,8 +10,6 @@ class ClientPage extends StatefulWidget {
 
 class _ClientPageState extends State<ClientPage> {
   late FlutterP2pConnectionClient p2p;
-
-  List<WifiP2pDevice> discoveredDevices = [];
 
   @override
   void initState() {
@@ -39,52 +36,28 @@ class _ClientPageState extends State<ClientPage> {
   }
 
   void askRequiredPermission() async {
-    var storageGranted = await p2p.utilities.askStoragePermission();
-    var p2pGranted = await p2p.utilities.askP2pPermissions();
+    var storageGranted = await p2p.askStoragePermission();
+    var p2pGranted = await p2p.askP2pPermissions();
     snack("Storage permission: $storageGranted\n\nP2p permission: $p2pGranted");
   }
 
   void enableWifi() async {
-    var wifiEnabled = await p2p.utilities.enableWifiServices();
+    var wifiEnabled = await p2p.enableWifiServices();
     snack("enabling wifi: $wifiEnabled");
   }
 
   void enableLocation() async {
-    var locationEnabled = await p2p.utilities.enableLocationServices();
+    var locationEnabled = await p2p.enableLocationServices();
     snack("enabling location: $locationEnabled");
   }
 
-  void startDiscovery() async {
+  void connect() async {
     try {
-      await p2p.startPeerDiscovery((devices) {
-        setState(() {
-          discoveredDevices = devices;
-        });
-      });
-      snack("started discovery");
-    } catch (e) {
-      snack("failed to start discovery: $e");
-    }
+      var ssid = 'AndroidShare_9277';
+      var password = 'cx7ngsn2qcctg5e';
 
-    setState(() {});
-  }
+      await p2p.connectToHotspot(ssid, password);
 
-  void stopDiscovery() async {
-    try {
-      await p2p.stopPeerDiscovery();
-      snack("stopped discovery");
-    } catch (e) {
-      snack("failed to stop discovery: $e");
-    }
-
-    discoveredDevices.clear();
-    setState(() {});
-  }
-
-  void connect(int index) async {
-    try {
-      var device = discoveredDevices[index];
-      await p2p.connect(device);
       snack("connected");
     } catch (e) {
       snack("failed to connect: $e");
@@ -94,13 +67,12 @@ class _ClientPageState extends State<ClientPage> {
 
   void disconnect() async {
     try {
-      await p2p.disconnect();
+      await p2p.disconnectFromHotspot();
       snack("disconnected");
     } catch (e) {
       snack("failed to disconnect: $e");
     }
 
-    discoveredDevices.clear();
     setState(() {});
   }
 
@@ -134,57 +106,24 @@ class _ClientPageState extends State<ClientPage> {
             const SizedBox(height: 30),
 
             // Group services
-            p2p.isDiscovering
+            p2p.isConnected
                 ? ElevatedButton(
-                    onPressed: stopDiscovery,
+                    onPressed: disconnect,
                     child: const Text(
-                      "stop discovery",
+                      "disconnect",
                       style: TextStyle(color: Colors.orange),
                     ),
                   )
                 : ElevatedButton(
-                    onPressed: startDiscovery,
+                    onPressed: connect,
                     child: const Text(
-                      "start discovery",
+                      "connect",
                       style: TextStyle(color: Colors.blue),
                     ),
                   ),
             const SizedBox(height: 30),
 
-            // list discovered devices
-            SizedBox(
-              height: 100,
-              width: MediaQuery.of(context).size.width,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: discoveredDevices.length,
-                itemBuilder: (context, index) => Center(
-                  child: Container(
-                    width: 200,
-                    height: 100,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color.fromARGB(255, 223, 223, 223),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(discoveredDevices[index].deviceName),
-                        p2p.isConnected
-                            ? ElevatedButton(
-                                onPressed: disconnect,
-                                child: const Text('disconnect'),
-                              )
-                            : ElevatedButton(
-                                onPressed: () => connect(index),
-                                child: const Text('connect'),
-                              ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            ///
           ],
         ),
       ),

@@ -1,3 +1,4 @@
+import 'package:flutter_p2p_connection/classes.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_p2p_connection_method_channel.dart';
@@ -24,82 +25,70 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     _instance = instance;
   }
 
-  Future<String> getPlatformVersion() {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+  Future<String> getPlatformVersion() async {
+    throw UnimplementedError('getPlatformVersion() has not been implemented.');
   }
 
-  Future<String> getPlatformModel() {
+  Future<String> getPlatformModel() async {
     throw UnimplementedError('getPlatformModel() has not been implemented.');
   }
 
-  Future<bool> initialize() {
+  Future<void> initialize() async {
     throw UnimplementedError('initialize() has not been implemented.');
   }
 
-  Future<bool> dispose() {
+  Future<void> dispose() async {
     throw UnimplementedError('dispose() has not been implemented.');
   }
 
-  Future<bool> startPeerDiscovery() {
-    throw UnimplementedError('startPeerDiscovery() has not been implemented.');
+  Future<void> createHotspot() async {
+    throw UnimplementedError('createHotspot() has not been implemented.');
   }
 
-  Future<bool> stopPeerDiscovery() {
-    throw UnimplementedError('stopPeerDiscovery() has not been implemented.');
+  Future<void> removeHotspot() async {
+    throw UnimplementedError('removeHotspot() has not been implemented.');
   }
 
-  Future<bool> connect(String address) {
-    throw UnimplementedError('connect() has not been implemented.');
+  Future<HotspotInfo?> requestHotspotInfo() async {
+    throw UnimplementedError('requestHotspotInfo() has not been implemented.');
   }
 
-  Future<bool> disconnect() {
-    throw UnimplementedError('disconnect() has not been implemented.');
+  Future<void> connectToHotspot(String ssid, String password) async {
+    throw UnimplementedError('connectToHotspot() has not been implemented.');
   }
 
-  Future<bool> createGroup() {
-    throw UnimplementedError('createGroup() has not been implemented.');
+  Future<void> disconnectFromHotspot() async {
+    throw UnimplementedError(
+        'disconnectFromHotspot() has not been implemented.');
   }
 
-  Future<bool> removeGroup() {
-    throw UnimplementedError('removeGroup() has not been implemented.');
-  }
-
-  Future<Map<dynamic, dynamic>?> requestGroupInfo() {
-    throw UnimplementedError('requestGroupInfo() has not been implemented.');
-  }
-
-  Future<List<dynamic>> fetchPeers() {
-    throw UnimplementedError('fetchPeers() has not been implemented.');
-  }
-
-  Future<Map<dynamic, dynamic>?> fetchConnectionInfo() {
-    throw UnimplementedError('fetchConnectionInfo() has not been implemented.');
-  }
-
-  Future<bool> checkP2pPermissions() {
+  Future<bool> checkP2pPermissions() async {
     throw UnimplementedError('checkP2pPermissions() has not been implemented.');
   }
 
-  Future<bool> askP2pPermissions() {
-    throw UnimplementedError(
-        'askLocationPermissions() has not been implemented.');
+  Future<void> askP2pPermissions() async {
+    throw UnimplementedError('askP2pPermissions() has not been implemented.');
   }
 
-  Future<bool> checkLocationEnabled() {
+  Future<bool> checkLocationEnabled() async {
     throw UnimplementedError(
         'checkLocationEnabled() has not been implemented.');
   }
 
-  Future<bool> enableLocationServices() {
+  Future<void> enableLocationServices() async {
     throw UnimplementedError(
         'enableLocationServices() has not been implemented.');
   }
 
-  Future<bool> checkWifiEnabled() {
+  Future<bool> checkWifiEnabled() async {
     throw UnimplementedError('checkWifiEnabled() has not been implemented.');
   }
 
-  Future<bool> enableWifiServices() {
+  Future<void> enableWifiServices() async {
     throw UnimplementedError('enableWifiServices() has not been implemented.');
+  }
+
+  Stream<HotspotClientState> get hotspotClientState {
+    throw UnimplementedError('hotspotClientState() has not been implemented.');
   }
 }

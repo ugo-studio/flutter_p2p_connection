@@ -1,65 +1,67 @@
-import 'package:dio/dio.dart';
+class HotspotInfo {
+  final bool isActive;
+  final String? ssid;
+  final String? preSharedKey;
+  final String? hostIpAddress;
+  final int? failureReason;
 
-enum WifiP2pDeviceStatus { connected, invited, failed, available, unavailable }
-
-class WifiP2pDevice {
-  final String deviceName;
-  final String deviceAddress;
-  final WifiP2pDeviceStatus status;
-  final bool? isGroupOwner;
-  final bool? isServiceDiscoveryCapable;
-  final String? primaryDeviceType;
-  final String? secondaryDeviceType;
-  const WifiP2pDevice({
-    required this.deviceName,
-    required this.deviceAddress,
-    required this.status,
-    required this.isGroupOwner,
-    required this.isServiceDiscoveryCapable,
-    this.primaryDeviceType,
-    this.secondaryDeviceType,
+  HotspotInfo({
+    required this.isActive,
+    this.ssid,
+    this.preSharedKey,
+    this.hostIpAddress,
+    this.failureReason,
   });
+
+  factory HotspotInfo.fromMap(Map<dynamic, dynamic> map) {
+    return HotspotInfo(
+      isActive: map['isActive'] as bool,
+      ssid: map['ssid'] as String?,
+      preSharedKey: map['preSharedKey'] as String?,
+      hostIpAddress: map['hostIpAddress'] as String?,
+      failureReason: map['failureReason'] as int?,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'isActive': isActive,
+      'ssid': ssid,
+      'preSharedKey': preSharedKey,
+      'hostIpAddress': hostIpAddress,
+      'failureReason': failureReason,
+    };
+  }
 }
 
-class WifiP2pConnectionInfo {
-  final bool isConnected;
-  final bool isGroupOwner;
-  final bool groupFormed;
-  final String groupOwnerAddress;
-  final List<WifiP2pDevice> clients;
-  final WifiP2pDevice? owner;
-  const WifiP2pConnectionInfo({
-    required this.isConnected,
-    required this.isGroupOwner,
-    required this.groupFormed,
-    required this.groupOwnerAddress,
-    required this.clients,
-    this.owner,
-  });
-}
+class HotspotClientState {
+  final bool isActive;
+  final String? ssid;
+  final String? gatewayIpAddress;
+  final String? hostIpAddress;
 
-class WifiP2pGroupInfo {
-  final bool isGroupOwner;
-  final String? passPhrase;
-  final String groupNetworkName;
-  final WifiP2pDevice owner;
-  final List<WifiP2pDevice> clients;
-  const WifiP2pGroupInfo({
-    required this.isGroupOwner,
-    required this.passPhrase,
-    required this.groupNetworkName,
-    required this.owner,
-    required this.clients,
+  HotspotClientState({
+    required this.isActive,
+    this.ssid,
+    this.gatewayIpAddress,
+    this.hostIpAddress,
   });
-}
 
-class WifiP2pClient {
-  final String deviceName;
-  final String? userName;
-  final String? imageUrl;
-  WifiP2pClient({
-    required this.deviceName,
-    required this.userName,
-    required this.imageUrl,
-  });
+  factory HotspotClientState.fromMap(Map<dynamic, dynamic> map) {
+    return HotspotClientState(
+      isActive: map['isActive'] as bool,
+      ssid: map['ssid'] as String?,
+      gatewayIpAddress: map['gatewayIpAddress'] as String?,
+      hostIpAddress: map['hostIpAddress'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'isActive': isActive,
+      'ssid': ssid,
+      'gatewayIpAddress': gatewayIpAddress,
+      'hostIpAddress': hostIpAddress,
+    };
+  }
 }
