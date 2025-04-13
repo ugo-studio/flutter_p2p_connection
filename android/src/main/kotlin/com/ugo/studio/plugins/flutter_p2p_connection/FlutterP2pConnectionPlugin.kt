@@ -280,13 +280,16 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                 }
                 override fun onStopped() {
                     super.onStopped()
-                    Log.d(TAG, "LocalOnlyHotspot Stopped.")
-                    val wasActive = hotspotReservation != null
-                    hotspotReservation = null
-                    hotspotInfoData = createHotspotInfoMap(false, null, null)
-                    // Send update via EventChannel only if it was previously considered active
-                    if (wasActive) {
+                    Log.d(TAG, "LocalOnlyHotspot Stopped Callback Triggered.")
+                    // Check if the state wasn't already updated by stopHotspotInternal
+                    if (hotspotInfoData?.get("isActive") != false) {
+                        Log.w(TAG, "onStopped: Updating state to inactive (might be redundant).")
+                        hotspotReservation = null // Ensure reservation is cleared if callback occurs later
+                        hotspotInfoData = createHotspotInfoMap(false, null, null)
+                        // Send update via EventChannel
                         mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
+                    } else {
+                        Log.d(TAG, "onStopped: State already inactive, likely updated by stopHotspotInternal.")
                     }
                 }
                 override fun onFailed(reason: Int) {
@@ -321,30 +324,52 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         result.success(true)
     }
 
+    /**
+     * Stops the LocalOnlyHotspot if active.
+     * This function now ensures the hotspot state is updated to inactive and an event is sent,
+     * rather than solely relying on the onStopped callback.
+     */
     private fun stopHotspotInternal() {
+        // Check if the hotspot was considered active *before* attempting to stop it.
         val wasActive = hotspotReservation != null || hotspotInfoData?.get("isActive") == true
+        var needsStateUpdate = false // Flag to track if state actually changed from active to inactive
+
         if (hotspotReservation != null) {
             Log.d(TAG, "Stopping LocalOnlyHotspot...")
-            try {
-                hotspotReservation?.close() // This should trigger onStopped callback
+             try {
+                 // Attempt to close the reservation. This *should* trigger the onStopped callback,
+                 // but we don't rely on it for the immediate state update anymore.
+                hotspotReservation?.close()
             } catch (e: Exception) {
                 Log.e(TAG, "Exception closing hotspot reservation: ${e.message}", e)
-                 // If close fails, manually update state and send event
-                 if (hotspotReservation != null) {
-                    hotspotReservation = null
-                    hotspotInfoData = createHotspotInfoMap(false, null, null)
-                    mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
-                }
-            }
-            // Set reservation to null here, onStopped will handle final state update if successful
-            hotspotReservation = null
+                 // Even if close fails, we mark the state as stopped.
+            } finally {
+                 // Set reservation to null unconditionally after attempting close
+                 hotspotReservation = null
+                 if (wasActive) {
+                     needsStateUpdate = true // Mark that we need to update the state to inactive
+                 }
+             }
         } else {
             Log.d(TAG, "Stop Hotspot called but no active reservation found.")
-            // If info was cached as active but reservation is null, update state
-            if (hotspotInfoData?.get("isActive") == true) {
-                 hotspotInfoData = createHotspotInfoMap(false, null, null)
-                 mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
+            // If it was cached as active but reservation is null (inconsistent state), mark for update.
+            if (wasActive) {
+                needsStateUpdate = true
             }
+        }
+
+        // Ensure the state is updated to inactive and event sent if the hotspot *was* active
+        // and its current cached state might not yet reflect 'inactive'.
+        if (needsStateUpdate && hotspotInfoData?.get("isActive") != false) {
+            Log.d(TAG, "stopHotspotInternal: Updating state to inactive and sending event.")
+            hotspotInfoData = createHotspotInfoMap(false, null, null)
+            // Send update via EventChannel on the main thread
+            mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
+        } else if (needsStateUpdate) {
+             // This case means it was active, we attempted to stop, but the state was already inactive (perhaps callback race). Log it.
+             Log.d(TAG, "stopHotspotInternal: Attempted stop, but state was already inactive. No event sent from here.")
+        } else {
+             Log.d(TAG, "stopHotspotInternal: Hotspot was not active or already stopped. No state change needed.")
         }
     }
 

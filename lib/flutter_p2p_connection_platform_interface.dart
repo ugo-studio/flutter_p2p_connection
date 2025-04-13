@@ -84,11 +84,12 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     throw UnimplementedError('enableWifiServices() has not been implemented.');
   }
 
-  Stream<HotspotHostState> get hotspotInfo {
-    throw UnimplementedError('hotspotInfo() has not been implemented.');
+  Stream<HotspotHostState> streamHotspotInfo() {
+    throw UnimplementedError('streamHotspotInfo() has not been implemented.');
   }
 
-  Stream<HotspotClientState> get hotspotClientState {
-    throw UnimplementedError('hotspotClientState() has not been implemented.');
+  Stream<HotspotClientState> streamHotspotClientState() {
+    throw UnimplementedError(
+        'streamHotspotClientState() has not been implemented.');
   }
 }

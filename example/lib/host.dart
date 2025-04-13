@@ -110,18 +110,13 @@ class _HostPageState extends State<HostPage> {
               onPressed: enableLocation,
               child: const Text("enable location"),
             ),
-            ElevatedButton(
-              onPressed: () async {
-                print((hotspotInfo?.hostIpAddress));
-                print((hotspotInfo?.ssid));
-                print((hotspotInfo?.preSharedKey));
-                print((hotspotInfo?.isActive));
-              },
-              child: const Text("get network info"),
-            ),
             const SizedBox(height: 30),
 
-            // Group services
+            // Hotspot information
+            Text('SSID=${hotspotInfo?.ssid}'),
+            Text('KEY=${hotspotInfo?.preSharedKey}'),
+
+            // hotspot services
             hotspotInfo?.isActive == true
                 ? ElevatedButton(
                     onPressed: removeHotspot,
@@ -137,6 +132,7 @@ class _HostPageState extends State<HostPage> {
                       style: TextStyle(color: Colors.green),
                     ),
                   ),
+            const SizedBox(height: 30),
           ],
         ),
       ),

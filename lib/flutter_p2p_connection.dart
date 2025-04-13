@@ -64,9 +64,9 @@ class FlutterP2pConnectionHost extends FlutterP2pConnection {
 
   /// Disposes the P2P connection host and stops the transport.
   Future<void> dispose() async {
+    await removeHotspot()
+        .catchError((_) => null); // Always remove hotspot first
     await FlutterP2pConnectionPlatform.instance.dispose();
-    await _p2pTransport?.stop();
-    _p2pTransport = null;
   }
 
   /// Creates a hotspot for P2P connections.
@@ -96,9 +96,9 @@ class FlutterP2pConnectionHost extends FlutterP2pConnection {
 
   /// Removes the hotspot and stops the transport.
   Future<void> removeHotspot() async {
-    await FlutterP2pConnectionPlatform.instance.removeHotspot();
     await _p2pTransport?.stop();
     _p2pTransport = null;
+    await FlutterP2pConnectionPlatform.instance.removeHotspot();
   }
 
   /// Streams hostspot information.
@@ -106,7 +106,7 @@ class FlutterP2pConnectionHost extends FlutterP2pConnection {
   /// information about the current state of the hotspot.
   /// The stream will emit new values whenever the hotspot state changes.
   Stream<HotspotHostState> streamHotspotHostState() {
-    return FlutterP2pConnectionPlatform.instance.hotspotInfo;
+    return FlutterP2pConnectionPlatform.instance.streamHotspotInfo();
   }
 }
 
@@ -123,8 +123,8 @@ class FlutterP2pConnectionClient extends FlutterP2pConnection {
 
   /// Disposes the P2P connection client and stops the transport.
   Future<void> dispose() async {
-    _p2pTransport = null;
-    await _p2pTransport?.disconnect();
+    await disconnectFromHotspot()
+        .catchError((_) => null); // Always remove hotspot first
     await FlutterP2pConnectionPlatform.instance.dispose();
   }
 
@@ -157,9 +157,9 @@ class FlutterP2pConnectionClient extends FlutterP2pConnection {
   /// Disconnects from the hotspot and stops the transport.
   /// This method should be called when the client no longer needs to be connected to the hotspot.
   Future<void> disconnectFromHotspot() async {
-    await FlutterP2pConnectionPlatform.instance.disconnectFromHotspot();
     await _p2pTransport?.disconnect();
     _p2pTransport = null;
+    await FlutterP2pConnectionPlatform.instance.disconnectFromHotspot();
   }
 
   /// Streams client's hostspot information.
@@ -167,6 +167,6 @@ class FlutterP2pConnectionClient extends FlutterP2pConnection {
   /// information about the current state of the client's hotspot.
   /// The stream will emit new values whenever the client's hotspot state changes.
   Stream<HotspotClientState> streamHotspotClientState() {
-    return FlutterP2pConnectionPlatform.instance.hotspotClientState;
+    return FlutterP2pConnectionPlatform.instance.streamHotspotClientState();
   }
 }

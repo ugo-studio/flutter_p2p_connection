@@ -65,8 +65,8 @@ class _ClientPageState extends State<ClientPage> {
 
   void connect() async {
     try {
-      var ssid = 'AndroidShare_1281';
-      var password = 'j66nmwj9gn7x262';
+      var ssid = 'AndroidShare_3925';
+      var password = '7vzgz88sdphd358';
 
       await p2p.connectToHotspot(ssid, password);
       snack("connected");
