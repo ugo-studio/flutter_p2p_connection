@@ -48,12 +48,14 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         private const val TAG = "FlutterP2pConnection"
         private const val METHOD_CHANNEL_NAME = "flutter_p2p_connection"
         private const val CLIENT_STATE_EVENT_CHANNEL_NAME = "flutter_p2p_connection_clientState"
+        private const val HOTSPOT_STATE_EVENT_CHANNEL_NAME = "flutter_p2p_connection_hotspotState"
         private const val LOCATION_PERMISSION_REQUEST_CODE = 2468
         private const val MIN_HOTSPOT_API_LEVEL = Build.VERSION_CODES.O // API 26 for LocalOnlyHotspot
     }
 
     private lateinit var methodChannel: MethodChannel
     private lateinit var clientStateEventChannel: EventChannel
+    private lateinit var hotspotStateEventChannel: EventChannel
 
     private lateinit var applicationContext: Context
     private var activity: Activity? = null
@@ -68,8 +70,10 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
     // Holds *host's* hotspot info (cached)
     private var hotspotInfoData: Map<String, Any?>? = null
 
-    // Event Sink for the new client connection state channel
+    // Event Sink for the client connection state channel
     private var clientStateEventSink: EventChannel.EventSink? = null
+    // Event Sink for the hotspot state channel
+    private var hotspotStateEventSink: EventChannel.EventSink? = null
 
     // For API 29+ ephemeral client connection via WifiNetworkSpecifier
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -90,8 +94,14 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         methodChannel = MethodChannel(flutterPluginBinding.binaryMessenger, METHOD_CHANNEL_NAME)
         methodChannel.setMethodCallHandler(this)
 
+        // Setup client state event channel
         clientStateEventChannel = EventChannel(flutterPluginBinding.binaryMessenger, CLIENT_STATE_EVENT_CHANNEL_NAME)
         clientStateEventChannel.setStreamHandler(clientStateStreamHandler)
+
+        // Setup hotspot state event channel
+        hotspotStateEventChannel = EventChannel(flutterPluginBinding.binaryMessenger, HOTSPOT_STATE_EVENT_CHANNEL_NAME)
+        hotspotStateEventChannel.setStreamHandler(hotspotStateStreamHandler)
+
 
         Log.d(TAG, "Plugin attached to engine.")
     }
@@ -99,6 +109,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel.setMethodCallHandler(null)
         clientStateEventChannel.setStreamHandler(null)
+        hotspotStateEventChannel.setStreamHandler(null)
         activityLifecycle?.removeObserver(this)
         stopHotspotInternal()
         disconnectClientInternal()
@@ -150,7 +161,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                 // --- Host Methods ---
                 "createHotspot" -> createHotspot(result)
                 "removeHotspot" -> removeHotspot(result)
-                "requestHotspotInfo" -> requestHotspotInfo(result)
+                // "requestHotspotInfo" is removed, use the hotspotStateEventChannel stream instead
                 // --- Client Connection Methods ---
                 "connectToHotspot" -> {
                     val ssid: String? = call.argument("ssid")
@@ -205,14 +216,22 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
             return
         }
         Log.d(TAG, "Disposing Hotspot Components...")
-        stopHotspotInternal()
+        stopHotspotInternal() // This will trigger a hotspot state update if needed
         disconnectClientInternal()
         hotspotCallback = null
         isInitialized = false
-        hotspotInfoData = null
-        clientStateEventSink?.success(createClientStateMap(false, null, null, null)) // Notify client disconnect
-        clientStateEventSink?.endOfStream() // Close the client stream properly
+        hotspotInfoData = null // Clear cached data
+
+        // Notify client disconnect and close stream
+        clientStateEventSink?.success(createClientStateMap(false, null, null, null))
+        clientStateEventSink?.endOfStream()
         clientStateEventSink = null
+
+        // Notify hotspot disconnect and close stream
+        // The state should have already been sent by stopHotspotInternal if needed
+        hotspotStateEventSink?.endOfStream()
+        hotspotStateEventSink = null
+
         Log.d(TAG, "Hotspot components disposed.")
         result.success(true)
     }
@@ -226,6 +245,8 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         }
         if (hotspotReservation != null) {
             Log.w(TAG, "Hotspot already active.")
+            // Re-send current state in case listener attached after hotspot started
+            mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData ?: createHotspotInfoMap(false, null, null)) }
             result.success(true)
             return
         }
@@ -245,6 +266,8 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                     if (reservation == null) {
                         Log.e(TAG, "Hotspot started callback received null reservation.")
                         hotspotInfoData = createHotspotInfoMap(false, null, null)
+                        // Send update via EventChannel
+                        mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
                         return
                     }
                     Log.d(TAG, "LocalOnlyHotspot Started.")
@@ -252,18 +275,27 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                     val config = reservation.wifiConfiguration
                     val hotspotIp = getHotspotIpAddress()
                     hotspotInfoData = createHotspotInfoMap(true, config, hotspotIp)
+                    // Send update via EventChannel
+                    mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
                 }
                 override fun onStopped() {
                     super.onStopped()
                     Log.d(TAG, "LocalOnlyHotspot Stopped.")
+                    val wasActive = hotspotReservation != null
                     hotspotReservation = null
                     hotspotInfoData = createHotspotInfoMap(false, null, null)
+                    // Send update via EventChannel only if it was previously considered active
+                    if (wasActive) {
+                        mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
+                    }
                 }
                 override fun onFailed(reason: Int) {
                     super.onFailed(reason)
                     Log.e(TAG, "LocalOnlyHotspot Failed. Reason: $reason")
                     hotspotReservation = null
                     hotspotInfoData = createHotspotInfoMap(false, null, null, reason)
+                    // Send update via EventChannel
+                    mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
                 }
             }
         }
@@ -285,36 +317,36 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
     }
 
     private fun removeHotspot(result: Result) {
-        stopHotspotInternal()
+        stopHotspotInternal() // This function now handles sending the update
         result.success(true)
     }
 
     private fun stopHotspotInternal() {
+        val wasActive = hotspotReservation != null || hotspotInfoData?.get("isActive") == true
         if (hotspotReservation != null) {
             Log.d(TAG, "Stopping LocalOnlyHotspot...")
             try {
-                hotspotReservation?.close()
+                hotspotReservation?.close() // This should trigger onStopped callback
             } catch (e: Exception) {
                 Log.e(TAG, "Exception closing hotspot reservation: ${e.message}", e)
+                 // If close fails, manually update state and send event
                  if (hotspotReservation != null) {
-                     hotspotReservation = null
-                     hotspotInfoData = createHotspotInfoMap(false, null, null)
+                    hotspotReservation = null
+                    hotspotInfoData = createHotspotInfoMap(false, null, null)
+                    mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
                 }
             }
-             hotspotReservation = null
+            // Set reservation to null here, onStopped will handle final state update if successful
+            hotspotReservation = null
         } else {
             Log.d(TAG, "Stop Hotspot called but no active reservation found.")
+            // If info was cached as active but reservation is null, update state
             if (hotspotInfoData?.get("isActive") == true) {
                  hotspotInfoData = createHotspotInfoMap(false, null, null)
+                 mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
             }
         }
     }
-
-    private fun requestHotspotInfo(result: Result) {
-        Log.d(TAG, "Requesting host's hotspot info (cached).")
-        result.success(hotspotInfoData ?: createHotspotInfoMap(false, null, null))
-    }
-
 
     // --- Client-Side Connection Methods ---
 
@@ -325,13 +357,13 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
             return
         }
         if (!hasHotspotPermissionsInternal()) {
-             result.error("PERMISSION_DENIED", "Missing required permissions (ACCESS_FINE_LOCATION and/or CHANGE_WIFI_STATE).", null)
-             return
-         }
-         if (!isWifiEnabledInternal()) {
-              result.error("WIFI_DISABLED", "Wi-Fi must be enabled to connect to a hotspot.", null)
-              return
-          }
+            result.error("PERMISSION_DENIED", "Missing required permissions (ACCESS_FINE_LOCATION and/or CHANGE_WIFI_STATE).", null)
+            return
+        }
+        if (!isWifiEnabledInternal()) {
+            result.error("WIFI_DISABLED", "Wi-Fi must be enabled to connect to a hotspot.", null)
+            return
+        }
 
         // Disconnect from any previous connection managed by this plugin first
         disconnectClientInternal()
@@ -346,80 +378,98 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun connectToHotspotApi29(result: Result, ssid: String, password: String) {
          try {
-             Log.d(TAG, "Building WifiNetworkSpecifier for SSID: $ssid (API 29+)")
-             val specifier = WifiNetworkSpecifier.Builder()
-                 .setSsid(ssid)
-                 .setWpa2Passphrase(password)
-                 .build()
-             val request = NetworkRequest.Builder()
-                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                 .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                 .setNetworkSpecifier(specifier)
-                 .build()
+            Log.d(TAG, "Building WifiNetworkSpecifier for SSID: $ssid (API 29+)")
+            val specifier = WifiNetworkSpecifier.Builder()
+                .setSsid(ssid)
+                .setWpa2Passphrase(password)
+                .build()
+            val request = NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .setNetworkSpecifier(specifier)
+                .build()
 
-             // Ensure previous callback is unregistered (redundant with disconnectClientInternal, but safe)
-             if (networkCallback != null) {
-                 try { connectivityManager.unregisterNetworkCallback(networkCallback!!) }
-                 catch (e: IllegalArgumentException) { Log.w(TAG, "NetworkCallback already unregistered?") }
-             }
+            // Ensure previous callback is unregistered (redundant with disconnectClientInternal, but safe)
+            if (networkCallback != null) {
+                try { connectivityManager.unregisterNetworkCallback(networkCallback!!) }
+                catch (e: IllegalArgumentException) { Log.w(TAG, "NetworkCallback already unregistered?") }
+            }
 
-             networkCallback = object : ConnectivityManager.NetworkCallback() {
-                 override fun onAvailable(network: Network) {
-                     super.onAvailable(network)
-                     currentNetworkRef.set(network)
-                     api29ConnectedSsid = ssid // Store the connected SSID
-                     val success = connectivityManager.bindProcessToNetwork(network)
-                     Log.d(TAG, "Client connected to hotspot: $api29ConnectedSsid (Network: $network, Bound: $success)")
-                     val connectionInfo = getClientConnectionInfo(network) // No need to pass SSID here
-                     val hotspotIp = getHotspotIpAddress() // Host's Ip Address
-                     clientStateEventSink?.success(createClientStateMap(true, connectionInfo?.get("gatewayIpAddress") as? String, hotspotIp, api29ConnectedSsid))
-                 }
+            networkCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    super.onAvailable(network)
+                    currentNetworkRef.set(network)
+                    api29ConnectedSsid = ssid // Store the connected SSID
+                    val success = connectivityManager.bindProcessToNetwork(network)
+                    Log.d(TAG, "Client connected to hotspot: $api29ConnectedSsid (Network: $network, Bound: $success)")
 
-                 override fun onLost(network: Network) {
-                     super.onLost(network)
-                     Log.d(TAG, "Client lost connection to hotspot: $api29ConnectedSsid (Network: $network)")
-                     if (network == currentNetworkRef.get()) {
-                         connectivityManager.bindProcessToNetwork(null)
-                         currentNetworkRef.set(null)
-                         val lostSsid = api29ConnectedSsid // Capture SSID before clearing
-                         api29ConnectedSsid = null
-                         clientStateEventSink?.success(createClientStateMap(false, null, null, lostSsid))
-                         networkCallback = null
+                    // Dispatch sink call to main thread
+                    mainHandler.post {
+                        val connectionInfo = getClientConnectionInfo(network)
+                        val hotspotIp = getHotspotIpAddress() // Host's Ip Address (or client's view of it)
+                        clientStateEventSink?.success(createClientStateMap(true, connectionInfo?.get("gatewayIpAddress") as? String, hotspotIp, api29ConnectedSsid))
+                    }
+                }
+
+                override fun onLost(network: Network) {
+                    super.onLost(network)
+                    Log.d(TAG, "Client lost connection to hotspot: $api29ConnectedSsid (Network: $network)")
+                    if (network == currentNetworkRef.get()) {
+                        connectivityManager.bindProcessToNetwork(null)
+                        currentNetworkRef.set(null)
+                        val lostSsid = api29ConnectedSsid
+                        api29ConnectedSsid = null
+                        // Dispatch sink call to main thread
+                        mainHandler.post {
+                            val hotspotIp = getHotspotIpAddress() // Still potentially useful
+                            clientStateEventSink?.success(createClientStateMap(false, null, hotspotIp, lostSsid))
+                        }
+                        networkCallback = null // Important to nullify here
+                    }
+                }
+
+                override fun onUnavailable() {
+                    super.onUnavailable()
+                    Log.w(TAG, "Client connection unavailable for hotspot: $api29ConnectedSsid")
+                    currentNetworkRef.set(null) // Ensure network ref is cleared
+                    val unavailableSsid = api29ConnectedSsid
+                    api29ConnectedSsid = null
+                    // Dispatch sink call to main thread
+                     mainHandler.post {
+                        val hotspotIp = getHotspotIpAddress()
+                        clientStateEventSink?.success(createClientStateMap(false, null, hotspotIp, unavailableSsid))
                      }
-                 }
+                     networkCallback = null // Important to nullify here
+                }
 
-                 override fun onUnavailable() {
-                     super.onUnavailable()
-                     Log.w(TAG, "Client connection unavailable for hotspot: $api29ConnectedSsid")
-                     currentNetworkRef.set(null)
-                     val unavailableSsid = api29ConnectedSsid
-                     api29ConnectedSsid = null
-                     clientStateEventSink?.success(createClientStateMap(false, null, null, unavailableSsid))
-                 }
+                override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                   super.onLinkPropertiesChanged(network, linkProperties)
+                   if (network == currentNetworkRef.get() && api29ConnectedSsid != null) {
+                        Log.d(TAG, "Link properties changed for $api29ConnectedSsid: $linkProperties")
+                        // Dispatch sink call to main thread
+                        mainHandler.post {
+                            val gatewayIp = getGatewayIpFromLinkProperties(linkProperties)
+                            val hotspotIp = getHotspotIpAddress()
+                            clientStateEventSink?.success(createClientStateMap(true, gatewayIp, hotspotIp, api29ConnectedSsid))
+                        }
+                    }
+                }
+            }
 
-                 override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
-                    super.onLinkPropertiesChanged(network, linkProperties)
-                    if (network == currentNetworkRef.get() && api29ConnectedSsid != null) {
-                         Log.d(TAG, "Link properties changed for $api29ConnectedSsid: $linkProperties")
-                         val gatewayIp = getGatewayIpFromLinkProperties(linkProperties)
-                         val hotspotIp = getHotspotIpAddress()
-                         // Resend state with potentially updated gateway IP
-                         clientStateEventSink?.success(createClientStateMap(true, gatewayIp, hotspotIp, api29ConnectedSsid))
-                     }
-                 }
-             }
-
-             Log.d(TAG, "Requesting network connection to $ssid...")
-             connectivityManager.requestNetwork(request, networkCallback!!)
-             result.success(true)
+            Log.d(TAG, "Requesting network connection to $ssid...")
+            connectivityManager.requestNetwork(request, networkCallback!!)
+            result.success(true)
 
          } catch (ex: Exception) {
-             Log.e(TAG, "Error connecting with WifiNetworkSpecifier: ${ex.message}", ex)
-             clientStateEventSink?.success(createClientStateMap(false, null, null, ssid)) // Report failure for the requested SSID
-             result.error("CONNECT_ERROR_API29", "Error connecting (API 29+): ${ex.message}", null)
-             networkCallback = null
-             currentNetworkRef.set(null)
-             api29ConnectedSsid = null
+            Log.e(TAG, "Error connecting with WifiNetworkSpecifier: ${ex.message}", ex)
+            mainHandler.post { // Ensure thread safety for sink
+                val hotspotIp = getHotspotIpAddress()
+                clientStateEventSink?.success(createClientStateMap(false, null, hotspotIp, ssid)) // Report failure for the requested SSID
+            }
+            result.error("CONNECT_ERROR_API29", "Error connecting (API 29+): ${ex.message}", null)
+            networkCallback = null
+            currentNetworkRef.set(null)
+            api29ConnectedSsid = null
          }
      }
 
@@ -436,19 +486,21 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                   // Check supplicant state for better accuracy
                   val supplicantState = currentWifiInfo.supplicantState
                   if (supplicantState == android.net.wifi.SupplicantState.COMPLETED) {
-                      Log.d(TAG,"Already connected to $ssid (Legacy check). Assuming connected.")
-                      legacyConnectedSsid = ssid
-                      legacyNetworkId = currentWifiInfo.networkId
-                      val gatewayIp = getLegacyGatewayIpAddress()
-                      val hotspotIp = getHotspotIpAddress()
-                      clientStateEventSink?.success(createClientStateMap(true, gatewayIp, hotspotIp, ssid))
-                      result.success(true)
-                      return
+                    Log.d(TAG,"Already connected to $ssid (Legacy check). Assuming connected.")
+                    legacyConnectedSsid = ssid
+                    legacyNetworkId = currentWifiInfo.networkId
+                    mainHandler.post { // Ensure thread safety for sink
+                        val gatewayIp = getLegacyGatewayIpAddress()
+                        val hotspotIp = getHotspotIpAddress()
+                        clientStateEventSink?.success(createClientStateMap(true, gatewayIp, hotspotIp, ssid))
+                    }
+                    result.success(true)
+                    return
                   } else {
-                       Log.d(TAG, "Found network $ssid but state is $supplicantState. Will proceed with connection attempt.")
-                       // May need to remove old config if stuck
-                       wifiManager.removeNetwork(currentWifiInfo.networkId)
-                       wifiManager.saveConfiguration()
+                    Log.d(TAG, "Found network $ssid but state is $supplicantState. Will proceed with connection attempt.")
+                    // May need to remove old config if stuck
+                    wifiManager.removeNetwork(currentWifiInfo.networkId)
+                    wifiManager.saveConfiguration()
                   }
              }
 
@@ -463,17 +515,17 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
             legacyNetworkId = wifiManager.addNetwork(config)
             if (legacyNetworkId == -1) {
-                 // Maybe the config already exists? Try finding it.
-                 val existingConfigs = wifiManager.configuredNetworks
-                 val existingConfig = existingConfigs?.firstOrNull { it.SSID == "\"$ssid\"" }
-                 if (existingConfig != null) {
-                     Log.w(TAG, "Network config for $ssid already existed. Using NetID: ${existingConfig.networkId}")
-                     legacyNetworkId = existingConfig.networkId
-                 } else {
-                      Log.e(TAG, "Failed to add network configuration for $ssid")
-                      result.error("NETWORK_ADD_FAILED", "Failed to add network configuration (Legacy)", null)
-                      return
-                 }
+                // Maybe the config already exists? Try finding it.
+                val existingConfigs = wifiManager.configuredNetworks
+                val existingConfig = existingConfigs?.firstOrNull { it.SSID == "\"$ssid\"" }
+                if (existingConfig != null) {
+                    Log.w(TAG, "Network config for $ssid already existed. Using NetID: ${existingConfig.networkId}")
+                    legacyNetworkId = existingConfig.networkId
+                } else {
+                    Log.e(TAG, "Failed to add network configuration for $ssid")
+                    result.error("NETWORK_ADD_FAILED", "Failed to add network configuration (Legacy)", null)
+                    return
+                }
             }
 
             Log.d(TAG, "Using network config for $ssid, NetID: $legacyNetworkId. Enabling...")
@@ -482,47 +534,48 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
             val enabled = wifiManager.enableNetwork(legacyNetworkId, true) // true = attempt to connect
             if (!enabled) {
-                 Log.e(TAG, "Failed to enable network $ssid (NetID: $legacyNetworkId)")
-                 // Don't remove if it was pre-existing and we just failed to enable
-                 if (wifiManager.configuredNetworks?.any{ it.networkId == legacyNetworkId} == true){
-                     Log.w(TAG, "Enable failed, but network config still exists. Will not remove.")
-                 } else {
-                     wifiManager.removeNetwork(legacyNetworkId)
-                     wifiManager.saveConfiguration()
-                 }
-                 legacyNetworkId = -1
-                 result.error("NETWORK_ENABLE_FAILED", "Failed to enable network $ssid (Legacy)", null)
-                 return
+                Log.e(TAG, "Failed to enable network $ssid (NetID: $legacyNetworkId)")
+                // Don't remove if it was pre-existing and we just failed to enable
+                if (wifiManager.configuredNetworks?.any{ it.networkId == legacyNetworkId} == true){
+                    Log.w(TAG, "Enable failed, but network config still exists. Will not remove.")
+                } else {
+                    wifiManager.removeNetwork(legacyNetworkId)
+                    wifiManager.saveConfiguration()
+                }
+                legacyNetworkId = -1
+                result.error("NETWORK_ENABLE_FAILED", "Failed to enable network $ssid (Legacy)", null)
+                return
              }
 
             // Reconnect might not be necessary if enableNetwork's second param is true, but can help sometimes
              val reconnected = wifiManager.reconnect()
              if (!reconnected) {
-                  Log.w(TAG, "Reconnect command failed for $ssid, but connection might still establish.")
+                Log.w(TAG, "Reconnect command failed for $ssid, but connection might still establish.")
              } else {
-                 Log.d(TAG, "Reconnect command sent for $ssid.")
+                Log.d(TAG, "Reconnect command sent for $ssid.")
              }
 
             legacyConnectedSsid = ssid
             mainHandler.postDelayed({
-                 val gatewayIp = getLegacyGatewayIpAddress()
-                 val hotspotIp = getHotspotIpAddress()
-                  // Verify connection state again using connectionInfo before sending event
-                  val verifyInfo = wifiManager.connectionInfo
-                  val verifySsid = verifyInfo?.ssid?.removePrefix("\"")?.removeSuffix("\"")
-                  val verifyState = verifyInfo?.supplicantState
+                val gatewayIp = getLegacyGatewayIpAddress()
+                val hotspotIp = getHotspotIpAddress()
+                // Verify connection state again using connectionInfo before sending event
+                val verifyInfo = wifiManager.connectionInfo
+                val verifySsid = verifyInfo?.ssid?.removePrefix("\"")?.removeSuffix("\"")
+                val verifyState = verifyInfo?.supplicantState
 
                  if (legacyConnectedSsid == ssid && verifySsid == ssid && verifyState == android.net.wifi.SupplicantState.COMPLETED) {
                     Log.d(TAG, "Confirmed legacy connection established to $ssid. Gateway: $gatewayIp")
+                    // Send success state
                     clientStateEventSink?.success(createClientStateMap(true, gatewayIp, hotspotIp, ssid))
                  } else {
-                     Log.w(TAG,"Legacy connection to $ssid not confirmed after delay. Current SSID: $verifySsid, State: $verifyState")
-                     // Optional: Send disconnect state if confirmation fails
-                     // if (legacyConnectedSsid == ssid) { // Only if we were still expecting this connection
-                     //    clientStateEventSink?.success(createClientStateMap(false, null, null, ssid))
-                     //    legacyConnectedSsid = null // Update state
-                     //    legacyNetworkId = -1
-                     // }
+                    Log.w(TAG,"Legacy connection to $ssid not confirmed after delay. Current SSID: $verifySsid, State: $verifyState")
+                    // Optional: Send disconnect state if confirmation fails and we were expecting this connection
+                    if (legacyConnectedSsid == ssid) {
+                    clientStateEventSink?.success(createClientStateMap(false, null, hotspotIp, ssid))
+                    legacyConnectedSsid = null // Update state
+                    legacyNetworkId = -1
+                    }
                  }
             }, 4000) // Increased delay slightly
 
@@ -530,10 +583,12 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
         } catch (ex: Exception) {
             Log.e(TAG, "Error in legacy connection: ${ex.message}", ex)
-            clientStateEventSink?.success(createClientStateMap(false, null, null, ssid))
+            mainHandler.post { // Ensure thread safety for sink
+                val hotspotIp = getHotspotIpAddress()
+                clientStateEventSink?.success(createClientStateMap(false, null, hotspotIp, ssid))
+            }
             if (legacyNetworkId != -1) {
                 // Avoid removing network if it might be used by others, only if we added it and failed.
-                // This logic is tricky. For simplicity, maybe just disable it.
                 // wifiManager.removeNetwork(legacyNetworkId)
                 // wifiManager.saveConfiguration()
             }
@@ -552,6 +607,8 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
     private fun disconnectClientInternal() {
         Log.d(TAG, "disconnectClientInternal called.")
         var previouslyConnectedSsid: String? = null
+        var needsUpdate = false
+        val hotspotIp = getHotspotIpAddress() // Get potentially relevant host IP
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             previouslyConnectedSsid = api29ConnectedSsid // Capture before clearing
@@ -567,73 +624,79 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
             } catch (ex: Exception) {
                 Log.e(TAG, "Error unregistering network callback: ${ex.message}", ex)
             } finally {
-                 // Ensure state is cleared regardless of exceptions
-                 if (networkCallback != null || currentNetworkRef.get() != null || api29ConnectedSsid != null) {
-                     networkCallback = null
-                     currentNetworkRef.set(null)
-                     api29ConnectedSsid = null
-                     clientStateEventSink?.success(createClientStateMap(false, null, null, previouslyConnectedSsid))
-                 } else {
-                      Log.d(TAG,"API 29+ disconnect: No active callback, network, or SSID state to clear.")
-                 }
+                // Ensure state is cleared regardless of exceptions
+                if (networkCallback != null || currentNetworkRef.get() != null || api29ConnectedSsid != null) {
+                    networkCallback = null
+                    currentNetworkRef.set(null)
+                    api29ConnectedSsid = null
+                    needsUpdate = true // We cleared state, so an update is needed
+                } else {
+                    Log.d(TAG,"API 29+ disconnect: No active callback, network, or SSID state to clear.")
+                }
              }
         } else {
             // Legacy disconnect
             previouslyConnectedSsid = legacyConnectedSsid // Capture before clearing
             try {
                 if (legacyNetworkId != -1) {
-                     Log.d(TAG, "Disabling and removing legacy network: $legacyConnectedSsid (NetID: $legacyNetworkId)")
-                     wifiManager.disableNetwork(legacyNetworkId) // Disable first
-                     wifiManager.removeNetwork(legacyNetworkId)
-                     wifiManager.saveConfiguration() // Persist removal
-                     wifiManager.disconnect() // Explicitly disconnect if needed
+                    Log.d(TAG, "Disabling and removing legacy network: $legacyConnectedSsid (NetID: $legacyNetworkId)")
+                    wifiManager.disableNetwork(legacyNetworkId) // Disable first
+                    wifiManager.removeNetwork(legacyNetworkId)
+                    wifiManager.saveConfiguration() // Persist removal
+                    wifiManager.disconnect() // Explicitly disconnect if needed
                 } else if (legacyConnectedSsid != null) {
-                     // If connected but not via managed ID, just disconnect
-                     Log.d(TAG,"Disconnecting from legacy network $legacyConnectedSsid (no managed NetID).")
-                     wifiManager.disconnect()
+                    // If connected but not via managed ID, just disconnect
+                    Log.d(TAG,"Disconnecting from legacy network $legacyConnectedSsid (no managed NetID).")
+                    wifiManager.disconnect()
                 }
             } catch (ex: Exception) {
                 Log.e(TAG, "Error in legacy disconnect steps: ${ex.message}", ex)
             } finally {
-                 // Ensure state is cleared
-                 if (legacyConnectedSsid != null) {
-                      legacyNetworkId = -1
-                      legacyConnectedSsid = null
-                      clientStateEventSink?.success(createClientStateMap(false, null, null, previouslyConnectedSsid))
-                 } else {
-                      Log.d(TAG,"Legacy disconnect: No active SSID state to clear.")
-                 }
+                // Ensure state is cleared
+                if (legacyConnectedSsid != null) {
+                    legacyNetworkId = -1
+                    legacyConnectedSsid = null
+                    needsUpdate = true // We cleared state, so an update is needed
+                } else {
+                    Log.d(TAG,"Legacy disconnect: No active SSID state to clear.")
+                }
             }
         }
+        // Send update only if state actually changed
+        if (needsUpdate) {
+            mainHandler.post {
+            clientStateEventSink?.success(createClientStateMap(false, null, hotspotIp, previouslyConnectedSsid))
+            }
+         }
     }
 
 
     // --- Permission and Service Checks ---
     // ... (checkHotspotPermissions, askHotspotPermissions, Location checks remain the same) ...
      private fun hasHotspotPermissionsInternal(): Boolean {
-         val fineLocationGranted = ContextCompat.checkSelfPermission(
-             applicationContext, Manifest.permission.ACCESS_FINE_LOCATION
-         ) == PackageManager.PERMISSION_GRANTED
-         val changeWifiStateGranted = ContextCompat.checkSelfPermission(
-             applicationContext, Manifest.permission.CHANGE_WIFI_STATE
-         ) == PackageManager.PERMISSION_GRANTED
+        val fineLocationGranted = ContextCompat.checkSelfPermission(
+            applicationContext, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val changeWifiStateGranted = ContextCompat.checkSelfPermission(
+            applicationContext, Manifest.permission.CHANGE_WIFI_STATE
+        ) == PackageManager.PERMISSION_GRANTED
 
-         var nearbyWifiGranted = true // Assume true for older APIs
-         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-              // Check if the app targets API 31+
-              val targetsApi31OrHigher = applicationContext.applicationInfo.targetSdkVersion >= Build.VERSION_CODES.S
-              if (targetsApi31OrHigher) {
-                   nearbyWifiGranted = ContextCompat.checkSelfPermission(
-                       applicationContext, Manifest.permission.NEARBY_WIFI_DEVICES
-                   ) == PackageManager.PERMISSION_GRANTED
-              }
-          }
+        var nearbyWifiGranted = true // Assume true for older APIs
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Check if the app targets API 31+
+            val targetsApi31OrHigher = applicationContext.applicationInfo.targetSdkVersion >= Build.VERSION_CODES.S
+            if (targetsApi31OrHigher) {
+                nearbyWifiGranted = ContextCompat.checkSelfPermission(
+                    applicationContext, Manifest.permission.NEARBY_WIFI_DEVICES
+                ) == PackageManager.PERMISSION_GRANTED
+            }
+        }
 
-         return fineLocationGranted && changeWifiStateGranted && nearbyWifiGranted
+        return fineLocationGranted && changeWifiStateGranted && nearbyWifiGranted
      }
      private fun checkHotspotPermissions(result: Result) {
-         Log.d(TAG, "Checking Permissions (FINE_LOCATION, CHANGE_WIFI_STATE, NEARBY_WIFI_DEVICES if needed).")
-         result.success(hasHotspotPermissionsInternal())
+        Log.d(TAG, "Checking Permissions (FINE_LOCATION, CHANGE_WIFI_STATE, NEARBY_WIFI_DEVICES if needed).")
+        result.success(hasHotspotPermissionsInternal())
      }
      private fun askHotspotPermissions(result: Result) {
         val currentActivity = activity
@@ -702,14 +765,14 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
     private fun isWifiEnabledInternal(): Boolean {
          // Try-catch block for added safety, especially during initialization phases
          try {
-             if (!this::wifiManager.isInitialized) {
-                 val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                 return wm?.isWifiEnabled ?: false
-             }
-             return wifiManager.isWifiEnabled
+            if (!this::wifiManager.isInitialized) {
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                return wm?.isWifiEnabled ?: false
+            }
+            return wifiManager.isWifiEnabled
          } catch (e: Exception) {
-             Log.e(TAG, "Error checking Wi-Fi enabled state: ${e.message}", e)
-             return false // Assume false if error occurs
+            Log.e(TAG, "Error checking Wi-Fi enabled state: ${e.message}", e)
+            return false // Assume false if error occurs
          }
      }
 
@@ -768,16 +831,16 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
     private fun getClientConnectionInfo(network: Network?): Map<String, Any?>? {
          if (network == null) return null
          try {
-             val linkProperties = connectivityManager.getLinkProperties(network) ?: return null
-             val gatewayIp = getGatewayIpFromLinkProperties(linkProperties)
-             // val clientIp = getClientIpFromLinkProperties(linkProperties) // Can add if needed
-             return mapOf(
-                 "gatewayIpAddress" to gatewayIp
-                 // "clientIpAddress" to clientIp
-             )
+            val linkProperties = connectivityManager.getLinkProperties(network) ?: return null
+            val gatewayIp = getGatewayIpFromLinkProperties(linkProperties)
+            // val clientIp = getClientIpFromLinkProperties(linkProperties) // Can add if needed
+            return mapOf(
+                "gatewayIpAddress" to gatewayIp
+                // "clientIpAddress" to clientIp
+            )
          } catch (e: Exception) {
-             Log.e(TAG, "Error getting client connection info: ${e.message}", e)
-             return null
+            Log.e(TAG, "Error getting client connection info: ${e.message}", e)
+            return null
          }
      }
      // Helper to extract Gateway IP from LinkProperties
@@ -785,31 +848,31 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
           if (linkProperties == null) return null
           // Prioritize default route
          linkProperties.routes?.forEach { routeInfo ->
-             if (routeInfo.isDefaultRoute && routeInfo.gateway != null) {
-                 val gwAddress = routeInfo.gateway?.hostAddress
-                 Log.d(TAG,"Found gateway IP (default route): $gwAddress")
-                 return gwAddress
-             }
+            if (routeInfo.isDefaultRoute && routeInfo.gateway != null) {
+                val gwAddress = routeInfo.gateway?.hostAddress
+                Log.d(TAG,"Found gateway IP (default route): $gwAddress")
+                return gwAddress
+            }
          }
           // Fallback: Look for the first IPv4 address on the interface that isn't the client's own IP
           // and assume the .1 address in that subnet is the gateway (common but not guaranteed)
           var clientIp: InetAddress? = null
           linkProperties.linkAddresses.forEach { linkAddress ->
-              if (linkAddress.address is Inet4Address && !linkAddress.address.isLoopbackAddress) {
-                  clientIp = linkAddress.address // Find the client's likely IP first
-                  return@forEach // Found one, stop iterating link addresses for client IP
-              }
+            if (linkAddress.address is Inet4Address && !linkAddress.address.isLoopbackAddress) {
+                clientIp = linkAddress.address // Find the client's likely IP first
+                return@forEach // Found one, stop iterating link addresses for client IP
+            }
           }
 
           if (clientIp != null) {
-              val clientIpString = clientIp?.hostAddress
-              Log.d(TAG, "Client's likely IP: $clientIpString")
-              val parts = clientIpString?.split(".")
-              if (parts?.size == 4) {
-                  val potentialGateway = "${parts[0]}.${parts[1]}.${parts[2]}.1"
-                  Log.w(TAG, "Could not find default route gateway. Guessing gateway: $potentialGateway")
-                  return potentialGateway // Fallback guess
-              }
+            val clientIpString = clientIp?.hostAddress
+            Log.d(TAG, "Client's likely IP: $clientIpString")
+            val parts = clientIpString?.split(".")
+            if (parts?.size == 4) {
+                val potentialGateway = "${parts[0]}.${parts[1]}.${parts[2]}.1"
+                Log.w(TAG, "Could not find default route gateway. Guessing gateway: $potentialGateway")
+                return potentialGateway // Fallback guess
+            }
           }
 
          Log.w(TAG, "Could not determine gateway IP from LinkProperties.")
@@ -874,8 +937,8 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         }
 
          if(potentialIp != null) {
-             Log.d(TAG, "Using fallback potential hotspot IP: $potentialIp")
-             return potentialIp
+            Log.d(TAG, "Using fallback potential hotspot IP: $potentialIp")
+            return potentialIp
          }
 
         Log.w(TAG, "Could not determine hotspot IP address.")
@@ -894,34 +957,34 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
             val hotspotIp = getHotspotIpAddress() // Get current host IP when listener attaches
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                 val currentNetwork = currentNetworkRef.get()
-                 if (currentNetwork != null && api29ConnectedSsid != null) {
-                      val connInfo = getClientConnectionInfo(currentNetwork)
-                      initialState = createClientStateMap(true, connInfo?.get("gatewayIpAddress") as? String, hotspotIp, api29ConnectedSsid)
-                  } else {
-                      initialState = createClientStateMap(false, null, hotspotIp, null) // Report host IP even if disconnected
-                  }
+                val currentNetwork = currentNetworkRef.get()
+                if (currentNetwork != null && api29ConnectedSsid != null) {
+                    val connInfo = getClientConnectionInfo(currentNetwork)
+                    initialState = createClientStateMap(true, connInfo?.get("gatewayIpAddress") as? String, hotspotIp, api29ConnectedSsid)
+                } else {
+                    initialState = createClientStateMap(false, null, hotspotIp, null) // Report host IP even if disconnected
+                }
             } else {
-                 // Check legacy state
-                 if (legacyConnectedSsid != null) {
-                     // Verify with current connection info if possible
-                     val verifyInfo = wifiManager.connectionInfo
-                     val verifySsid = verifyInfo?.ssid?.removePrefix("\"")?.removeSuffix("\"")
-                     val verifyState = verifyInfo?.supplicantState
-                     if(legacyConnectedSsid == verifySsid && verifyState == android.net.wifi.SupplicantState.COMPLETED) {
-                         val gatewayIp = getLegacyGatewayIpAddress()
-                         initialState = createClientStateMap(true, gatewayIp, hotspotIp, legacyConnectedSsid)
-                     } else {
-                          // State mismatch, report disconnected
-                           Log.w(TAG, "onListen: Legacy state mismatch. Expected $legacyConnectedSsid, got $verifySsid ($verifyState). Reporting disconnected.")
-                           initialState = createClientStateMap(false, null, hotspotIp, legacyConnectedSsid) // Keep last known SSID? Or null?
-                           // Clear potentially stale state
-                           // legacyConnectedSsid = null
-                           // legacyNetworkId = -1
-                     }
-                 } else {
-                      initialState = createClientStateMap(false, null, hotspotIp, null)
-                 }
+                // Check legacy state
+                if (legacyConnectedSsid != null) {
+                    // Verify with current connection info if possible
+                    val verifyInfo = wifiManager.connectionInfo
+                    val verifySsid = verifyInfo?.ssid?.removePrefix("\"")?.removeSuffix("\"")
+                    val verifyState = verifyInfo?.supplicantState
+                    if(legacyConnectedSsid == verifySsid && verifyState == android.net.wifi.SupplicantState.COMPLETED) {
+                        val gatewayIp = getLegacyGatewayIpAddress()
+                        initialState = createClientStateMap(true, gatewayIp, hotspotIp, legacyConnectedSsid)
+                    } else {
+                        // State mismatch, report disconnected
+                        Log.w(TAG, "onListen: Legacy state mismatch. Expected $legacyConnectedSsid, got $verifySsid ($verifyState). Reporting disconnected.")
+                        initialState = createClientStateMap(false, null, hotspotIp, legacyConnectedSsid) // Keep last known SSID? Or null?
+                        // Clear potentially stale state
+                        // legacyConnectedSsid = null
+                        // legacyNetworkId = -1
+                    }
+                } else {
+                    initialState = createClientStateMap(false, null, hotspotIp, null)
+                }
             }
             Log.d(TAG, "ClientState StreamHandler: Sending initial state: $initialState")
             clientStateEventSink?.success(initialState)
@@ -930,6 +993,23 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         override fun onCancel(arguments: Any?) {
             Log.d(TAG, "ClientState StreamHandler: onCancel")
             clientStateEventSink = null
+        }
+    }
+
+    // --- EventChannel Stream Handler (Hotspot State Handler) ---
+    private val hotspotStateStreamHandler = object : EventChannel.StreamHandler {
+        override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+            Log.d(TAG, "HotspotState StreamHandler: onListen")
+            hotspotStateEventSink = events
+            // Send the current cached state immediately when a listener attaches
+            val currentState = hotspotInfoData ?: createHotspotInfoMap(false, null, getHotspotIpAddress())
+            Log.d(TAG, "HotspotState StreamHandler: Sending initial state: $currentState")
+            hotspotStateEventSink?.success(currentState)
+        }
+
+        override fun onCancel(arguments: Any?) {
+            Log.d(TAG, "HotspotState StreamHandler: onCancel")
+            hotspotStateEventSink = null
         }
     }
 }

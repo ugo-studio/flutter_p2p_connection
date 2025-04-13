@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_p2p_connection/classes.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 
 class ClientPage extends StatefulWidget {
@@ -10,17 +13,26 @@ class ClientPage extends StatefulWidget {
 
 class _ClientPageState extends State<ClientPage> {
   late FlutterP2pConnectionClient p2p;
+  late StreamSubscription<HotspotClientState> hotspotStateStream;
+
+  HotspotClientState? hotspotInfo;
 
   @override
   void initState() {
     super.initState();
-    p2p = FlutterP2pConnectionClient();
-    p2p.initialize();
+    p2p = FlutterP2pConnectionClient()..initialize();
+
+    hotspotStateStream = p2p.streamHotspotClientState().listen((info) {
+      setState(() {
+        hotspotInfo = info;
+      });
+    });
   }
 
   @override
   void dispose() {
     p2p.dispose();
+    hotspotStateStream.cancel();
     super.dispose();
   }
 
@@ -53,16 +65,14 @@ class _ClientPageState extends State<ClientPage> {
 
   void connect() async {
     try {
-      var ssid = 'AndroidShare_9277';
-      var password = 'cx7ngsn2qcctg5e';
+      var ssid = 'AndroidShare_1281';
+      var password = 'j66nmwj9gn7x262';
 
       await p2p.connectToHotspot(ssid, password);
-
       snack("connected");
     } catch (e) {
       snack("failed to connect: $e");
     }
-    setState(() {});
   }
 
   void disconnect() async {
@@ -72,8 +82,6 @@ class _ClientPageState extends State<ClientPage> {
     } catch (e) {
       snack("failed to disconnect: $e");
     }
-
-    setState(() {});
   }
 
   @override
@@ -106,7 +114,7 @@ class _ClientPageState extends State<ClientPage> {
             const SizedBox(height: 30),
 
             // Group services
-            p2p.isConnected
+            hotspotInfo?.isActive == true
                 ? ElevatedButton(
                     onPressed: disconnect,
                     child: const Text(
@@ -130,168 +138,3 @@ class _ClientPageState extends State<ClientPage> {
     );
   }
 }
-
-//  Text(
-//                 "IP: ${wifiP2PInfo == null ? "null" : wifiP2PInfo?.groupOwnerAddress}"),
-//             wifiP2PInfo != null
-//                 ? Text(
-//                     "connected: ${wifiP2PInfo?.isConnected}, isGroupOwner: ${wifiP2PInfo?.isGroupOwner}, groupFormed: ${wifiP2PInfo?.groupFormed}, groupOwnerAddress: ${wifiP2PInfo?.groupOwnerAddress}, clients: ${wifiP2PInfo?.clients}")
-//                 : const SizedBox.shrink(),
-//             const SizedBox(height: 10),
-//             const Text("PEERS:"),
-//             SizedBox(
-//               height: 100,
-//               width: MediaQuery.of(context).size.width,
-//               child: ListView.builder(
-//                 scrollDirection: Axis.horizontal,
-//                 itemCount: peersList.length,
-//                 itemBuilder: (context, index) => Center(
-//                   child: GestureDetector(
-//                     onTap: () {
-//                       showDialog(
-//                         context: context,
-//                         builder: (context) => Center(
-//                           child: AlertDialog(
-//                             content: SizedBox(
-//                               height: 200,
-//                               child: Column(
-//                                 mainAxisAlignment: MainAxisAlignment.center,
-//                                 crossAxisAlignment: CrossAxisAlignment.start,
-//                                 children: [
-//                                   Text("name: ${peersList[index].deviceName}"),
-//                                   Text(
-//                                       "address: ${peersList[index].deviceAddress}"),
-//                                   Text(
-//                                       "isGroupOwner: ${peersList[index].isGroupOwner}"),
-//                                   Text(
-//                                       "isServiceDiscoveryCapable: ${peersList[index].isServiceDiscoveryCapable}"),
-//                                   Text(
-//                                       "primaryDeviceType: ${peersList[index].primaryDeviceType}"),
-//                                   Text(
-//                                       "secondaryDeviceType: ${peersList[index].secondaryDeviceType}"),
-//                                   Text("status: ${peersList[index].status}"),
-//                                 ],
-//                               ),
-//                             ),
-//                             actions: [
-//                               TextButton(
-//                                 onPressed: () async {
-//                                   Navigator.of(context).pop();
-//                                   bool? bo = await p2p
-//                                       .connect(peersList[index].deviceAddress);
-//                                   snack("connected: $bo");
-//                                 },
-//                                 child: const Text("connect"),
-//                               ),
-//                               TextButton(
-//                                 onPressed: () async {
-//                                   Navigator.of(context).pop();
-//                                   await p2p.disconnect();
-//                                   snack("disconnected");
-//                                 },
-//                                 child: const Text("disconnect"),
-//                               ),
-//                             ],
-//                           ),
-//                         ),
-//                       );
-//                     },
-//                     child: Container(
-//                       height: 80,
-//                       width: 80,
-//                       decoration: BoxDecoration(
-//                         color: Colors.grey,
-//                         borderRadius: BorderRadius.circular(50),
-//                       ),
-//                       child: Center(
-//                         child: Text(
-//                           peersList[index]
-//                               .deviceName
-//                               .toString()
-//                               .characters
-//                               .first
-//                               .toUpperCase(),
-//                           style: const TextStyle(
-//                             color: Colors.white,
-//                             fontSize: 30,
-//                           ),
-//                         ),
-//                       ),
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//             ),
-
-//             // storage servcies
-//             ElevatedButton(
-//               onPressed: () async {
-//                 snack(await p2p.askStoragePermission()
-//                     ? "granted"
-//                     : "denied");
-//               },
-//               child: const Text("ask storage permission"),
-//             ),
-
-//             // location services
-//             ElevatedButton(
-//               onPressed: () async {
-//                 snack(await p2p.askLocationPermissions()
-//                     ? "enabled"
-//                     : "disabled");
-//               },
-//               child: const Text(
-//                 "ask location permission",
-//               ),
-//             ),
-//             ElevatedButton(
-//               onPressed: () async {
-//                 print(await p2p.enableLocationServices());
-//               },
-//               child: const Text("enable location"),
-//             ),
-
-//             // wifi services
-//             ElevatedButton(
-//               onPressed: () async {
-//                 print(await p2p.enableWifiServices());
-//               },
-//               child: const Text("enable wifi"),
-//             ),
-
-//             // group services
-//             ElevatedButton(
-//               onPressed: () async {
-//                 bool? created = await p2p.createGroup();
-//                 snack("created group: $created");
-//               },
-//               child: const Text("create group"),
-//             ),
-//             ElevatedButton(
-//               onPressed: () async {
-//                 bool? removed = await p2p.removeGroup();
-//                 snack("removed group: $removed");
-//               },
-//               child: const Text("remove group"),
-//             ),
-//             ElevatedButton(
-//               onPressed: () async {
-//                 String? ip = await p2p.getIPAddress();
-//                 snack("ip: $ip");
-//               },
-//               child: const Text("get ip"),
-//             ),
-//             ElevatedButton(
-//               onPressed: () async {
-//                 bool? discovering = await p2p.startPeerDiscovery();
-//                 snack("started discovery $discovering");
-//               },
-//               child: const Text("start peer discovery"),
-//             ),
-//             ElevatedButton(
-//               onPressed: () async {
-//                 bool? stopped = await p2p.startPeerDiscovery();
-//                 snack("stopped discovering $stopped");
-//               },
-//               child: const Text("stop peer discovery"),
-//             ),

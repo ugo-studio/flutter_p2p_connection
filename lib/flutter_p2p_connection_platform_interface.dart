@@ -49,10 +49,6 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     throw UnimplementedError('removeHotspot() has not been implemented.');
   }
 
-  Future<HotspotInfo?> requestHotspotInfo() async {
-    throw UnimplementedError('requestHotspotInfo() has not been implemented.');
-  }
-
   Future<void> connectToHotspot(String ssid, String password) async {
     throw UnimplementedError('connectToHotspot() has not been implemented.');
   }
@@ -86,6 +82,10 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
 
   Future<void> enableWifiServices() async {
     throw UnimplementedError('enableWifiServices() has not been implemented.');
+  }
+
+  Stream<HotspotHostState> get hotspotInfo {
+    throw UnimplementedError('hotspotInfo() has not been implemented.');
   }
 
   Stream<HotspotClientState> get hotspotClientState {

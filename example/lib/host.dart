@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_p2p_connection/classes.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 
 class HostPage extends StatefulWidget {
@@ -10,17 +13,26 @@ class HostPage extends StatefulWidget {
 
 class _HostPageState extends State<HostPage> {
   late FlutterP2pConnectionHost p2p;
+  late StreamSubscription<HotspotHostState> hotspotInfoStream;
+
+  HotspotHostState? hotspotInfo;
 
   @override
   void initState() {
     super.initState();
-    p2p = FlutterP2pConnectionHost();
-    p2p.initialize();
+    p2p = FlutterP2pConnectionHost()..initialize();
+
+    hotspotInfoStream = p2p.streamHotspotHostState().listen((info) {
+      setState(() {
+        hotspotInfo = info;
+      });
+    });
   }
 
   @override
   void dispose() {
     p2p.dispose();
+    hotspotInfoStream.cancel();
     super.dispose();
   }
 
@@ -100,33 +112,17 @@ class _HostPageState extends State<HostPage> {
             ),
             ElevatedButton(
               onPressed: () async {
-                // StreamSubscription<HotspotInfo>? listener =
-                //     p2p.streamHotspotInfo().listen(
-                //   (info) {
-                //     print((info.hostIpAddress));
-                //     print((info.ssid));
-                //     print((info.preSharedKey));
-                //     print((info.isActive));
-                //   },
-                // );
-
-                // await Future.delayed(Duration(seconds: 10));
-                // listener.cancel();
-
-                var info = await p2p.requestHotspotInfo();
-                if (info != null) {
-                  print((info.hostIpAddress));
-                  print((info.ssid));
-                  print((info.preSharedKey));
-                  print((info.isActive));
-                }
+                print((hotspotInfo?.hostIpAddress));
+                print((hotspotInfo?.ssid));
+                print((hotspotInfo?.preSharedKey));
+                print((hotspotInfo?.isActive));
               },
               child: const Text("get network info"),
             ),
             const SizedBox(height: 30),
 
             // Group services
-            p2p.groupCreated
+            hotspotInfo?.isActive == true
                 ? ElevatedButton(
                     onPressed: removeHotspot,
                     child: const Text(

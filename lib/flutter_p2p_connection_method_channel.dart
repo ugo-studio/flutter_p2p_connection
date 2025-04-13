@@ -13,9 +13,13 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
 
   /// The event channel used for hotspot connection info events.
   @visibleForTesting
-  final EventChannel eventChannel =
+  final EventChannel hotspotStateEventChannel =
+      const EventChannel('flutter_p2p_connection_hotspotState');
+  @visibleForTesting
+  final EventChannel clientStateEventChannel =
       const EventChannel('flutter_p2p_connection_clientState');
 
+  Stream<HotspotHostState>? _hotspotInfo;
   Stream<HotspotClientState>? _hotspotClientState;
 
   @override
@@ -48,14 +52,6 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   @override
   Future<void> removeHotspot() async {
     await methodChannel.invokeMethod('removeHotspot');
-  }
-
-  @override
-  Future<HotspotInfo?> requestHotspotInfo() async {
-    final Map<dynamic, dynamic>? result =
-        await methodChannel.invokeMethod('requestHotspotInfo');
-    if (result == null) return null;
-    return HotspotInfo.fromMap(Map.castFrom(result));
   }
 
   @override
@@ -106,12 +102,23 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
     await methodChannel.invokeMethod('enableWifiServices');
   }
 
-  /// Returns a broadcast stream of [HotspotInfo] updates from the native platform.
+  /// Returns a broadcast stream of [HotspotHostState] updates from the native platform.
+  @override
+  Stream<HotspotHostState> get hotspotInfo {
+    _hotspotInfo ??= hotspotStateEventChannel.receiveBroadcastStream().map(
+          (dynamic event) => HotspotHostState.fromMap(Map.castFrom(event)),
+        );
+    return _hotspotInfo!;
+  }
+
+  /// Returns a broadcast stream of [HotspotClientState] updates from the native platform.
   @override
   Stream<HotspotClientState> get hotspotClientState {
-    _hotspotClientState ??= eventChannel.receiveBroadcastStream().map(
-          (dynamic event) => HotspotClientState.fromMap(Map.castFrom(event)),
-        );
+    _hotspotClientState ??=
+        clientStateEventChannel.receiveBroadcastStream().map(
+              (dynamic event) =>
+                  HotspotClientState.fromMap(Map.castFrom(event)),
+            );
     return _hotspotClientState!;
   }
 }

@@ -1,11 +1,11 @@
-class HotspotInfo {
+class HotspotHostState {
   final bool isActive;
   final String? ssid;
   final String? preSharedKey;
   final String? hostIpAddress;
   final int? failureReason;
 
-  HotspotInfo({
+  HotspotHostState({
     required this.isActive,
     this.ssid,
     this.preSharedKey,
@@ -13,8 +13,8 @@ class HotspotInfo {
     this.failureReason,
   });
 
-  factory HotspotInfo.fromMap(Map<dynamic, dynamic> map) {
-    return HotspotInfo(
+  factory HotspotHostState.fromMap(Map<dynamic, dynamic> map) {
+    return HotspotHostState(
       isActive: map['isActive'] as bool,
       ssid: map['ssid'] as String?,
       preSharedKey: map['preSharedKey'] as String?,

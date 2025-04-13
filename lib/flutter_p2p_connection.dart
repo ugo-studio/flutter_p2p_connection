@@ -48,11 +48,9 @@ class FlutterP2pConnection {
 
 class FlutterP2pConnectionHost extends FlutterP2pConnection {
   // Private variables
-  bool _groupCreated = false;
   P2pTransportHost? _p2pTransport;
 
   // Public variables
-  bool get groupCreated => _groupCreated;
   P2pTransportHost? get p2pTransport => _p2pTransport;
 
   // Methods
@@ -61,7 +59,6 @@ class FlutterP2pConnectionHost extends FlutterP2pConnection {
   /// This method should be called before using any other methods in this class.
   Future<void> initialize() async {
     _p2pTransport = null;
-    _groupCreated = false;
     await FlutterP2pConnectionPlatform.instance.initialize();
   }
 
@@ -70,7 +67,6 @@ class FlutterP2pConnectionHost extends FlutterP2pConnection {
     await FlutterP2pConnectionPlatform.instance.dispose();
     await _p2pTransport?.stop();
     _p2pTransport = null;
-    _groupCreated = false;
   }
 
   /// Creates a hotspot for P2P connections.
@@ -93,7 +89,6 @@ class FlutterP2pConnectionHost extends FlutterP2pConnection {
     // );
     // await transport.start();
 
-    _groupCreated = true;
     // _p2pTransport = transport;
 
     // return transport;
@@ -104,25 +99,22 @@ class FlutterP2pConnectionHost extends FlutterP2pConnection {
     await FlutterP2pConnectionPlatform.instance.removeHotspot();
     await _p2pTransport?.stop();
     _p2pTransport = null;
-    _groupCreated = false;
   }
 
-  /// Requests hotspot information.
-  Future<HotspotInfo?> requestHotspotInfo() async {
-    return await FlutterP2pConnectionPlatform.instance.requestHotspotInfo();
+  /// Streams hostspot information.
+  /// This method returns a stream of [HotspotHostState] objects that contain
+  /// information about the current state of the hotspot.
+  /// The stream will emit new values whenever the hotspot state changes.
+  Stream<HotspotHostState> streamHotspotHostState() {
+    return FlutterP2pConnectionPlatform.instance.hotspotInfo;
   }
 }
 
 class FlutterP2pConnectionClient extends FlutterP2pConnection {
   // Private variables
-  bool _isConnected = false;
   P2pTransportClient? _p2pTransport;
 
-  // Public variables
-  bool get isConnected => _isConnected;
-
   // Methods
-
   /// Initializes the P2P connection client.
   Future<void> initialize() async {
     _p2pTransport = null;
@@ -157,7 +149,6 @@ class FlutterP2pConnectionClient extends FlutterP2pConnection {
     // );
     // await transport.connect();
 
-    _isConnected = true;
     // _p2pTransport = transport;
 
     // return transport;
@@ -166,16 +157,15 @@ class FlutterP2pConnectionClient extends FlutterP2pConnection {
   /// Disconnects from the hotspot and stops the transport.
   /// This method should be called when the client no longer needs to be connected to the hotspot.
   Future<void> disconnectFromHotspot() async {
-    _p2pTransport = null;
-    _isConnected = false;
-    await _p2pTransport?.disconnect();
     await FlutterP2pConnectionPlatform.instance.disconnectFromHotspot();
+    await _p2pTransport?.disconnect();
+    _p2pTransport = null;
   }
 
-  /// Streams client hostspot information.
+  /// Streams client's hostspot information.
   /// This method returns a stream of [HotspotClientState] objects that contain
-  /// information about the current state of the hotspot client.
-  /// The stream will emit new values whenever the hotspot client state changes.
+  /// information about the current state of the client's hotspot.
+  /// The stream will emit new values whenever the client's hotspot state changes.
   Stream<HotspotClientState> streamHotspotClientState() {
     return FlutterP2pConnectionPlatform.instance.hotspotClientState;
   }
