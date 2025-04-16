@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
+import 'package:flutter_p2p_connection_example/qr/scanner_page.dart';
 
 class ClientPage extends StatefulWidget {
   const ClientPage({super.key});
@@ -65,16 +66,22 @@ class _ClientPageState extends State<ClientPage> {
     snack("enabling location: $locationEnabled");
   }
 
-  void connect() async {
-    try {
-      var ssid = 'AndroidShare_3925';
-      var password = '7vzgz88sdphd358';
-
-      await p2p.client.connectToHotspot(ssid, password);
-      snack("connected");
-    } catch (e) {
-      snack("failed to connect: $e");
-    }
+  void scanAndConnect() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScannerPage(
+          onScanned: (ssid, preSharedKey) async {
+            try {
+              await p2p.client.connectToHotspot(ssid, preSharedKey);
+              snack("connected");
+            } catch (e) {
+              snack("failed to connect: $e");
+            }
+          },
+        ),
+      ),
+    );
   }
 
   void disconnect() async {
@@ -94,45 +101,47 @@ class _ClientPageState extends State<ClientPage> {
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Ask required permissions
-            ElevatedButton(
-              onPressed: askRequiredPermission,
-              child: const Text("ask required permissions"),
-            ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Ask required permissions
+              ElevatedButton(
+                onPressed: askRequiredPermission,
+                child: const Text("ask required permissions"),
+              ),
 
-            // Enable required services
-            ElevatedButton(
-              onPressed: enableWifi,
-              child: const Text("enable wifi"),
-            ),
-            ElevatedButton(
-              onPressed: enableLocation,
-              child: const Text("enable location"),
-            ),
-            const SizedBox(height: 30),
+              // Enable required services
+              ElevatedButton(
+                onPressed: enableWifi,
+                child: const Text("enable wifi"),
+              ),
+              ElevatedButton(
+                onPressed: enableLocation,
+                child: const Text("enable location"),
+              ),
+              const SizedBox(height: 30),
 
-            // Group services
-            hotspotInfo?.isActive == true
-                ? ElevatedButton(
-                    onPressed: disconnect,
-                    child: const Text(
-                      "disconnect",
-                      style: TextStyle(color: Colors.orange),
+              // Group services
+              hotspotInfo?.isActive == true
+                  ? ElevatedButton(
+                      onPressed: disconnect,
+                      child: const Text(
+                        "disconnect",
+                        style: TextStyle(color: Colors.orange),
+                      ),
+                    )
+                  : ElevatedButton(
+                      onPressed: scanAndConnect,
+                      child: const Text(
+                        "scan qrcode and connect",
+                        style: TextStyle(color: Colors.blue),
+                      ),
                     ),
-                  )
-                : ElevatedButton(
-                    onPressed: connect,
-                    child: const Text(
-                      "connect",
-                      style: TextStyle(color: Colors.blue),
-                    ),
-                  ),
-            const SizedBox(height: 30),
-          ],
+              const SizedBox(height: 30),
+            ],
+          ),
         ),
       ),
     );

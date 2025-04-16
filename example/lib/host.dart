@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
+import 'package:flutter_p2p_connection_example/qr/qr_image_page.dart';
 
 class HostPage extends StatefulWidget {
   const HostPage({super.key});
@@ -14,7 +15,7 @@ class _HostPageState extends State<HostPage> {
   late FlutterP2pConnection p2p;
   late StreamSubscription<HotspotHostState> hotspotStateSubscription;
 
-  HotspotHostState? hotspotInfo;
+  HotspotHostState? hotspotState;
 
   @override
   void initState() {
@@ -22,10 +23,9 @@ class _HostPageState extends State<HostPage> {
     p2p = FlutterP2pConnection();
     p2p.host.initialize();
 
-    hotspotStateSubscription = p2p.host.onHotspotStateChanged().listen((info) {
-      setState(() {
-        hotspotInfo = info;
-      });
+    hotspotStateSubscription = p2p.host.onHotspotStateChanged().listen((state) {
+      hotspotState = state;
+      setState(() {});
     });
   }
 
@@ -91,49 +91,63 @@ class _HostPageState extends State<HostPage> {
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Ask required permissions
-            ElevatedButton(
-              onPressed: askRequiredPermission,
-              child: const Text("ask required permissions"),
-            ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Ask required permissions
+              ElevatedButton(
+                onPressed: askRequiredPermission,
+                child: const Text("ask required permissions"),
+              ),
 
-            // Enable required services
-            ElevatedButton(
-              onPressed: enableWifi,
-              child: const Text("enable wifi"),
-            ),
-            ElevatedButton(
-              onPressed: enableLocation,
-              child: const Text("enable location"),
-            ),
-            const SizedBox(height: 30),
+              // Enable required services
+              ElevatedButton(
+                onPressed: enableWifi,
+                child: const Text("enable wifi"),
+              ),
+              ElevatedButton(
+                onPressed: enableLocation,
+                child: const Text("enable location"),
+              ),
+              const SizedBox(height: 30),
 
-            // Hotspot information
-            Text('SSID=${hotspotInfo?.ssid}'),
-            Text('KEY=${hotspotInfo?.preSharedKey}'),
-
-            // hotspot services
-            hotspotInfo?.isActive == true
-                ? ElevatedButton(
-                    onPressed: removeGroup,
-                    child: const Text(
-                      "remove hotspot",
-                      style: TextStyle(color: Colors.red),
+              // hotspot services
+              hotspotState?.isActive == true
+                  ? ElevatedButton(
+                      onPressed: removeGroup,
+                      child: const Text(
+                        "remove group",
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    )
+                  : ElevatedButton(
+                      onPressed: createGroup,
+                      child: const Text(
+                        "create group",
+                        style: TextStyle(color: Colors.green),
+                      ),
                     ),
-                  )
-                : ElevatedButton(
-                    onPressed: createGroup,
-                    child: const Text(
-                      "create hotspot",
-                      style: TextStyle(color: Colors.green),
+              const SizedBox(height: 30),
+
+              // show qrcode image
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => QrImagePage(
+                        hotspotState: hotspotState,
+                      ),
                     ),
-                  ),
-            const SizedBox(height: 30),
-          ],
+                  );
+                },
+                child: const Text("show hotspot info qrcode"),
+              ),
+              const SizedBox(height: 30),
+            ],
+          ),
         ),
       ),
     );
