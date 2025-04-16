@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_p2p_connection/classes.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 
 class HostPage extends StatefulWidget {
@@ -12,17 +11,18 @@ class HostPage extends StatefulWidget {
 }
 
 class _HostPageState extends State<HostPage> {
-  late FlutterP2pConnectionHost p2p;
-  late StreamSubscription<HotspotHostState> hotspotInfoStream;
+  late FlutterP2pConnection p2p;
+  late StreamSubscription<HotspotHostState> hotspotStateSubscription;
 
   HotspotHostState? hotspotInfo;
 
   @override
   void initState() {
     super.initState();
-    p2p = FlutterP2pConnectionHost()..initialize();
+    p2p = FlutterP2pConnection();
+    p2p.host.initialize();
 
-    hotspotInfoStream = p2p.streamHotspotHostState().listen((info) {
+    hotspotStateSubscription = p2p.host.onHotspotStateChanged().listen((info) {
       setState(() {
         hotspotInfo = info;
       });
@@ -31,8 +31,8 @@ class _HostPageState extends State<HostPage> {
 
   @override
   void dispose() {
-    p2p.dispose();
-    hotspotInfoStream.cancel();
+    p2p.host.dispose();
+    hotspotStateSubscription.cancel();
     super.dispose();
   }
 
@@ -63,22 +63,22 @@ class _HostPageState extends State<HostPage> {
     snack("enabling location: $locationEnabled");
   }
 
-  void createHotspot() async {
+  void createGroup() async {
     try {
-      await p2p.createHotspot();
-      snack("created hotspot");
+      await p2p.host.createGroup();
+      snack("created group");
     } catch (e) {
-      snack("failed to create hotspot: $e");
+      snack("failed to create group: $e");
     }
     setState(() {});
   }
 
-  void removeHotspot() async {
+  void removeGroup() async {
     try {
-      await p2p.removeHotspot();
-      snack("removed hotspot");
+      await p2p.host.removeGroup();
+      snack("removed group");
     } catch (e) {
-      snack("failed to remove hotspot: $e");
+      snack("failed to remove group: $e");
     }
     setState(() {});
   }
@@ -119,14 +119,14 @@ class _HostPageState extends State<HostPage> {
             // hotspot services
             hotspotInfo?.isActive == true
                 ? ElevatedButton(
-                    onPressed: removeHotspot,
+                    onPressed: removeGroup,
                     child: const Text(
                       "remove hotspot",
                       style: TextStyle(color: Colors.red),
                     ),
                   )
                 : ElevatedButton(
-                    onPressed: createHotspot,
+                    onPressed: createGroup,
                     child: const Text(
                       "create hotspot",
                       style: TextStyle(color: Colors.green),

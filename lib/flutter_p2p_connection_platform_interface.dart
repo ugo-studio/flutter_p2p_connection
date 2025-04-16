@@ -1,4 +1,4 @@
-import 'package:flutter_p2p_connection/classes.dart';
+import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_p2p_connection_method_channel.dart';
@@ -82,6 +82,16 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
 
   Future<void> enableWifiServices() async {
     throw UnimplementedError('enableWifiServices() has not been implemented.');
+  }
+
+  Future<bool> checkBluetoothEnabled() async {
+    throw UnimplementedError(
+        'checkBluetoothEnabled() has not been implemented.');
+  }
+
+  Future<void> enableBluetoothServices() async {
+    throw UnimplementedError(
+        'enableBluetoothServices() has not been implemented.');
   }
 
   Stream<HotspotHostState> streamHotspotInfo() {

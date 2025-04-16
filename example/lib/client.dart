@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_p2p_connection/classes.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 
 class ClientPage extends StatefulWidget {
@@ -12,17 +11,20 @@ class ClientPage extends StatefulWidget {
 }
 
 class _ClientPageState extends State<ClientPage> {
-  late FlutterP2pConnectionClient p2p;
-  late StreamSubscription<HotspotClientState> hotspotStateStream;
+  late FlutterP2pConnection p2p;
+  late StreamSubscription<HotspotClientState> hotspotStateSubscription;
 
   HotspotClientState? hotspotInfo;
 
   @override
   void initState() {
     super.initState();
-    p2p = FlutterP2pConnectionClient()..initialize();
+    p2p = FlutterP2pConnection();
 
-    hotspotStateStream = p2p.streamHotspotClientState().listen((info) {
+    p2p.client.initialize();
+
+    hotspotStateSubscription =
+        p2p.client.onHotspotStateChanged().listen((info) {
       setState(() {
         hotspotInfo = info;
       });
@@ -31,8 +33,8 @@ class _ClientPageState extends State<ClientPage> {
 
   @override
   void dispose() {
-    p2p.dispose();
-    hotspotStateStream.cancel();
+    p2p.client.dispose();
+    hotspotStateSubscription.cancel();
     super.dispose();
   }
 
@@ -68,7 +70,7 @@ class _ClientPageState extends State<ClientPage> {
       var ssid = 'AndroidShare_3925';
       var password = '7vzgz88sdphd358';
 
-      await p2p.connectToHotspot(ssid, password);
+      await p2p.client.connectToHotspot(ssid, password);
       snack("connected");
     } catch (e) {
       snack("failed to connect: $e");
@@ -77,7 +79,7 @@ class _ClientPageState extends State<ClientPage> {
 
   void disconnect() async {
     try {
-      await p2p.disconnectFromHotspot();
+      await p2p.client.disconnectFromHotspot();
       snack("disconnected");
     } catch (e) {
       snack("failed to disconnect: $e");
@@ -88,7 +90,7 @@ class _ClientPageState extends State<ClientPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Host'),
+        title: const Text('Client'),
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -130,8 +132,6 @@ class _ClientPageState extends State<ClientPage> {
                     ),
                   ),
             const SizedBox(height: 30),
-
-            ///
           ],
         ),
       ),

@@ -3,6 +3,7 @@ package com.ugo.studio.plugins.flutter_p2p_connection
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.bluetooth.BluetoothAdapter 
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -50,6 +51,8 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         private const val CLIENT_STATE_EVENT_CHANNEL_NAME = "flutter_p2p_connection_clientState"
         private const val HOTSPOT_STATE_EVENT_CHANNEL_NAME = "flutter_p2p_connection_hotspotState"
         private const val LOCATION_PERMISSION_REQUEST_CODE = 2468
+        // Define Bluetooth Request Code if you plan to handle results (optional for enable intent)
+        // private const val ENABLE_BLUETOOTH_REQUEST_CODE = 2469
         private const val MIN_HOTSPOT_API_LEVEL = Build.VERSION_CODES.O // API 26 for LocalOnlyHotspot
     }
 
@@ -63,6 +66,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
     private lateinit var wifiManager: WifiManager
     private lateinit var connectivityManager: ConnectivityManager
+    private var bluetoothAdapter: BluetoothAdapter? = null // Added BluetoothAdapter instance
     private var hotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
     private var hotspotCallback: WifiManager.LocalOnlyHotspotCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -102,6 +106,8 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         hotspotStateEventChannel = EventChannel(flutterPluginBinding.binaryMessenger, HOTSPOT_STATE_EVENT_CHANNEL_NAME)
         hotspotStateEventChannel.setStreamHandler(hotspotStateStreamHandler)
 
+        // Initialize Bluetooth Adapter here for early access if needed
+        bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
 
         Log.d(TAG, "Plugin attached to engine.")
     }
@@ -113,6 +119,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         activityLifecycle?.removeObserver(this)
         stopHotspotInternal()
         disconnectClientInternal()
+        bluetoothAdapter = null // Release adapter reference
         Log.d(TAG, "Plugin detached from engine.")
     }
 
@@ -150,7 +157,13 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
             "initialize" -> { initializeHotspotComponents(result); return }
         }
         // All other methods require plugin initialization
-        if (!isInitialized && call.method !in listOf("checkP2pPermissions", "askP2pPermissions", "connectToHotspot", "disconnectFromHotspot", "checkLocationEnabled", "enableLocationServices", "checkWifiEnabled", "enableWifiServices")) {
+        // Updated condition to allow bluetooth checks before initialization
+        if (!isInitialized && call.method !in listOf(
+                "checkP2pPermissions", "askP2pPermissions",
+                "connectToHotspot", "disconnectFromHotspot",
+                "checkLocationEnabled", "enableLocationServices",
+                "checkWifiEnabled", "enableWifiServices",
+                "checkBluetoothEnabled", "enableBluetoothServices")) {
             result.error("NOT_INITIALIZED", "Plugin not initialized. Call initialize() first.", null)
             return
         }
@@ -161,7 +174,6 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                 // --- Host Methods ---
                 "createHotspot" -> createHotspot(result)
                 "removeHotspot" -> removeHotspot(result)
-                // "requestHotspotInfo" is removed, use the hotspotStateEventChannel stream instead
                 // --- Client Connection Methods ---
                 "connectToHotspot" -> {
                     val ssid: String? = call.argument("ssid")
@@ -174,12 +186,18 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                 }
                 "disconnectFromHotspot" -> disconnectFromHotspot(result)
                 // --- Permission ---
+                // P2p
                 "checkP2pPermissions" -> checkHotspotPermissions(result)
                 "askP2pPermissions" -> askHotspotPermissions(result)
+                // Location
                 "checkLocationEnabled" -> checkLocationEnabled(result)
                 "enableLocationServices" -> enableLocationServices(result)
+                // Wi-Fi
                 "checkWifiEnabled" -> checkWifiEnabled(result)
                 "enableWifiServices" -> enableWifiServices(result)
+                // Bluetooth
+                 "checkBluetoothEnabled" -> checkBluetoothEnabled(result)
+                 "enableBluetoothServices" -> enableBluetoothServices(result)
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
@@ -204,6 +222,12 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         }
         wifiManager = wm
         connectivityManager = cm
+
+        // Ensure Bluetooth adapter is available if not already checked
+        if (bluetoothAdapter == null) {
+            bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+        }
+
         isInitialized = true
         Log.d(TAG, "Hotspot components initialized successfully.")
         result.success(true)
@@ -535,7 +559,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                 preSharedKey = "\"$password\""
                 status = WifiConfiguration.Status.ENABLED
                 allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_PSK)
-                priority = 40 // Example priority
+                priority = 40 // Higher priority for this network
             }
 
             legacyNetworkId = wifiManager.addNetwork(config)
@@ -697,7 +721,6 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
 
     // --- Permission and Service Checks ---
-    // ... (checkHotspotPermissions, askHotspotPermissions, Location checks remain the same) ...
      private fun hasHotspotPermissionsInternal(): Boolean {
         val fineLocationGranted = ContextCompat.checkSelfPermission(
             applicationContext, Manifest.permission.ACCESS_FINE_LOCATION
@@ -719,6 +742,28 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
         return fineLocationGranted && changeWifiStateGranted && nearbyWifiGranted
      }
+
+    // Check for BLUETOOTH_CONNECT permission required on API 31+ if targeting API 31+
+    @SuppressLint("MissingPermission") // Lint complains even with the version check
+    private fun hasBluetoothConnectPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Check if the app targets API 31+
+            val targetsApi31OrHigher = applicationContext.applicationInfo.targetSdkVersion >= Build.VERSION_CODES.S
+            if (targetsApi31OrHigher) {
+                 ContextCompat.checkSelfPermission(
+                    applicationContext, Manifest.permission.BLUETOOTH_CONNECT
+                 ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                // App targets API 30 or lower, running on S+: BLUETOOTH/BLUETOOTH_ADMIN from Manifest suffice
+                true // Assume Manifest permissions are sufficient for legacy apps on S+
+            }
+        } else {
+            // Running on older Android: BLUETOOTH/BLUETOOTH_ADMIN from Manifest suffice
+            true // Assume Manifest permissions are sufficient
+        }
+    }
+
+
      private fun checkHotspotPermissions(result: Result) {
         Log.d(TAG, "Checking Permissions (FINE_LOCATION, CHANGE_WIFI_STATE, NEARBY_WIFI_DEVICES if needed).")
         result.success(hasHotspotPermissionsInternal())
@@ -828,6 +873,85 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         }
     }
 
+    // --- Bluetooth Service Checks --- START ---
+
+    /** Checks if Bluetooth is enabled. Requires BLUETOOTH_CONNECT permission on API 31+ if targeting 31+. */
+    @SuppressLint("MissingPermission") // Permission check is done internally via helper
+    private fun isBluetoothEnabledInternal(): Boolean {
+        if (bluetoothAdapter == null) {
+            Log.w(TAG, "Bluetooth adapter not available.")
+            return false // Device doesn't support Bluetooth
+        }
+        // Check for BLUETOOTH_CONNECT permission if required
+        if (!hasBluetoothConnectPermission()) {
+             Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to check Bluetooth state (API 31+ requirement). Returning false.")
+            // Note: You might want to throw an error or handle this differently,
+            // but returning false is a common safe approach.
+            return false
+        }
+        // isEnabled does not throw SecurityException if permission is missing, but it's best practice to check
+        return try {
+            bluetoothAdapter!!.isEnabled
+        } catch (e: SecurityException) {
+            // This catch might not be strictly necessary for isEnabled but added for safety
+            Log.e(TAG, "SecurityException checking Bluetooth state: ${e.message}", e)
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking Bluetooth enabled state: ${e.message}", e)
+            false
+        }
+    }
+
+    /** Method channel handler for checking Bluetooth state */
+    private fun checkBluetoothEnabled(result: Result) {
+        result.success(isBluetoothEnabledInternal())
+    }
+
+
+    /** Opens the system dialog to request the user to enable Bluetooth. Requires Activity context. */
+    @SuppressLint("MissingPermission") // Permission check is done internally for state, intent launch relies on system UI
+    private fun enableBluetoothServices(result: Result) {
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error("NO_ACTIVITY", "Activity is not available to request Bluetooth enable", null)
+            return
+        }
+        if (bluetoothAdapter == null) {
+             result.error("BLUETOOTH_UNAVAILABLE", "Device does not support Bluetooth.", null)
+             return
+        }
+
+        // Check permission before checking state (as isEnabled requires it on S+)
+        if (!hasBluetoothConnectPermission()) {
+             result.error("PERMISSION_DENIED", "Missing BLUETOOTH_CONNECT permission (needed for check/enable on API 31+).", null)
+             return
+        }
+
+        // Check if already enabled
+        if (bluetoothAdapter!!.isEnabled) {
+            Log.d(TAG, "Bluetooth is already enabled.")
+            result.success(true) // Indicate it's already enabled
+            return
+        }
+
+        // Create intent to request Bluetooth enable
+        val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+        try {
+            // Note: Starting this intent doesn't require explicit runtime permission request here.
+            // The system handles the dialog. The necessary permission (BLUETOOTH_CONNECT or BLUETOOTH_ADMIN)
+            // must be declared in the app's AndroidManifest.xml.
+            // You *could* use ActivityResultLauncher for a more modern approach to get the result,
+            // but just launching the intent is sufficient for this request.
+            currentActivity.startActivity(enableBtIntent)
+            // currentActivity.startActivityForResult(enableBtIntent, ENABLE_BLUETOOTH_REQUEST_CODE); // If you needed to handle the result
+            result.success(true) // Indicate the request intent was successfully launched
+        } catch (e: Exception) {
+             Log.e(TAG, "Error launching Bluetooth enable intent: ${e.message}", e)
+             result.error("INTENT_ERROR", "Could not launch Bluetooth enable request.", e.message)
+        }
+    }
+    // --- Bluetooth Service Checks --- END ---
+
 
     // --- Data Serialization and Helpers ---
 
@@ -846,9 +970,9 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
     private fun createClientStateMap(isActive: Boolean, gatewayIpAddress: String?, ipAddress: String?, connectedSsid: String?): Map<String, Any?> {
         return mapOf(
             "isActive" to isActive,
-            "gatewayIpAddress" to gatewayIpAddress,
+            "hostGatewayIpAddress" to gatewayIpAddress,
             "hostIpAddress" to ipAddress, // Include host IP here too
-            "ssid" to connectedSsid?.removePrefix("\"")?.removeSuffix("\"") // Ensure SSID is cleaned
+            "hostSsid" to connectedSsid?.removePrefix("\"")?.removeSuffix("\"") // Ensure SSID is cleaned
         )
     }
 

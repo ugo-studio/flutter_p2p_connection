@@ -7,7 +7,6 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 class MockFlutterP2pConnectionPlatform
     with MockPlatformInterfaceMixin
     implements FlutterP2pConnectionPlatform {
-
   @override
   Future<String> getPlatformVersion() => Future.value('42');
 
@@ -16,17 +15,19 @@ class MockFlutterP2pConnectionPlatform
 }
 
 void main() {
-  final FlutterP2pConnectionPlatform initialPlatform = FlutterP2pConnectionPlatform.instance;
+  final FlutterP2pConnectionPlatform initialPlatform =
+      FlutterP2pConnectionPlatform.instance;
 
   test('$MethodChannelFlutterP2pConnection is the default instance', () {
     expect(initialPlatform, isInstanceOf<MethodChannelFlutterP2pConnection>());
   });
 
-  test('getPlatformVersion', () async {
+  test('getDeviceModel', () async {
     FlutterP2pConnection flutterP2pConnectionPlugin = FlutterP2pConnection();
-    MockFlutterP2pConnectionPlatform fakePlatform = MockFlutterP2pConnectionPlatform();
+    MockFlutterP2pConnectionPlatform fakePlatform =
+        MockFlutterP2pConnectionPlatform();
     FlutterP2pConnectionPlatform.instance = fakePlatform;
 
-    expect(await flutterP2pConnectionPlugin.getPlatformVersion(), '42');
+    expect(await flutterP2pConnectionPlugin.getDeviceModel(), 'Test Model');
   });
 }

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_p2p_connection/classes.dart';
+import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 import 'flutter_p2p_connection_platform_interface.dart';
 
 /// An implementation of [FlutterP2pConnectionPlatform] that uses method channels.
@@ -66,7 +66,7 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
 
   @override
   Future<bool> checkP2pPermissions() async {
-    final bool? hasPermission =
+    bool? hasPermission =
         await methodChannel.invokeMethod('checkP2pPermissions');
     return hasPermission ?? false;
   }
@@ -78,8 +78,7 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
 
   @override
   Future<bool> checkLocationEnabled() async {
-    final bool? enabled =
-        await methodChannel.invokeMethod('checkLocationEnabled');
+    bool? enabled = await methodChannel.invokeMethod('checkLocationEnabled');
     return enabled ?? false;
   }
 
@@ -90,7 +89,7 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
 
   @override
   Future<bool> checkWifiEnabled() async {
-    final bool? enabled = await methodChannel.invokeMethod('checkWifiEnabled');
+    bool? enabled = await methodChannel.invokeMethod('checkWifiEnabled');
     return enabled ?? false;
   }
 
@@ -99,12 +98,24 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
     await methodChannel.invokeMethod('enableWifiServices');
   }
 
+  Future<bool> checkBluetoothEnabled() async {
+    bool? enabled = await methodChannel.invokeMethod('checkBluetoothEnabled');
+    return enabled ?? false;
+  }
+
+  @override
+  Future<void> enableBluetoothServices() async {
+    await methodChannel.invokeMethod('enableBluetoothServices');
+  }
+
   /// Returns a broadcast stream of [HotspotHostState] updates from the native platform.
   @override
   Stream<HotspotHostState> streamHotspotInfo() {
     var stream = hotspotStateEventChannel.receiveBroadcastStream().map(
-          (dynamic event) => HotspotHostState.fromMap(Map.from(event)),
-        );
+      (dynamic event) {
+        return HotspotHostState.fromMap(Map.from(event));
+      },
+    );
     return stream;
   }
 
@@ -112,8 +123,10 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   @override
   Stream<HotspotClientState> streamHotspotClientState() {
     var stream = clientStateEventChannel.receiveBroadcastStream().map(
-          (dynamic evt) => HotspotClientState.fromMap(Map.from(evt)),
-        );
+      (dynamic evt) {
+        return HotspotClientState.fromMap(Map.from(evt));
+      },
+    );
     return stream;
   }
 }
