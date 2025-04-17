@@ -8,7 +8,10 @@
     <!-- location permissions  -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+    <!-- Nearby Devices Permissions (Android 13 / API 33+) -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" 
+                     android:usesPermissionFlags="neverForLocation"
+                     tools:targetApi="tiramisu" />
 
     <!-- wifi permissions  -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -19,16 +22,23 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <!-- bluetooth permissions -->
-    <!-- <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /> -->
+    <uses-permission android:name="android.permission.BLUETOOTH" 
+                     android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+                     android:maxSdkVersion="30" />
 
-    <!-- Allow Bluetooth -->
-    <!-- <uses-feature
-        android:name="android.hardware.bluetooth_le"
-        android:required="true" /> -->
+    <!-- Bluetooth Permissions (New - Android 12 / API 31+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"
+                     tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+                     android:usesPermissionFlags="neverForLocation"
+                     tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"
+                     tools:targetApi="s"/>
+
+    <!-- Essential specifically for Bluetooth Low Energy (BLE) -->
+    <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
     <application
         android:label="flutter_p2p_connection_example"

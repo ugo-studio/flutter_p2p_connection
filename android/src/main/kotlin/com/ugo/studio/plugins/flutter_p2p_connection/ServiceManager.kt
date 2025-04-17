@@ -17,20 +17,18 @@ import io.flutter.plugin.common.MethodChannel
 
 class ServiceManager(
     private val applicationContext: Context,
-    private val permissionsManager: PermissionsManager // Inject PermissionsManager
+    private val permissionsManager: PermissionsManager, // Inject PermissionsManager
+    private val bluetoothAdapter: BluetoothAdapter? // Inject adapter instance (can be null)
 ) {
     private var activity: Activity? = null
     private val TAG = Constants.TAG
 
-    // Lazy initialization for managers
+    // Lazy initialization for managers that don't need injection
     private val wifiManager: WifiManager by lazy {
         applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     }
     private val locationManager: LocationManager by lazy {
         applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    }
-    private val bluetoothAdapter: BluetoothAdapter? by lazy {
-        BluetoothAdapter.getDefaultAdapter()
     }
 
     fun updateActivity(activity: Activity?) {
@@ -59,8 +57,10 @@ class ServiceManager(
             return
         }
         try {
-            currentActivity.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-            result.success(true)
+            val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+            // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Add only if necessary
+            currentActivity.startActivity(intent)
+            result.success(true) // Indicate settings were opened
         } catch (e: Exception) {
             Log.e(TAG, "Error opening location settings: ${e.message}", e)
             result.error("SETTINGS_ERROR", "Could not open location settings.", e.message)
@@ -81,7 +81,7 @@ class ServiceManager(
         result.success(isWifiEnabled())
     }
 
-    @SuppressLint("NewApi")
+    @SuppressLint("NewApi") // For Settings.Panel
     fun enableWifiServices(result: MethodChannel.Result) {
         val currentActivity = activity
         if (currentActivity == null) {
@@ -91,13 +91,15 @@ class ServiceManager(
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val panelIntent = Intent(Settings.Panel.ACTION_WIFI)
-                panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Add this flag if calling from non-Activity context potentially
+                // panelIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Add only if necessary
                 currentActivity.startActivity(panelIntent)
             } else {
-                @Suppress("DEPRECATION")
-                currentActivity.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                // For older OS, go to general Wi-Fi settings
+                val settingsIntent = Intent(Settings.ACTION_WIFI_SETTINGS)
+                // settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Add only if necessary
+                currentActivity.startActivity(settingsIntent)
             }
-            result.success(true)
+            result.success(true) // Indicate settings/panel was opened
         } catch (e: Exception) {
             Log.e(TAG, "Error opening Wi-Fi settings/panel: ${e.message}", e)
             result.error("SETTINGS_ERROR", "Could not open Wi-Fi settings/panel.", e.message)
@@ -107,24 +109,25 @@ class ServiceManager(
     // --- Bluetooth ---
     @SuppressLint("MissingPermission") // Permission check is done internally via helper
     fun isBluetoothEnabled(): Boolean {
+        // Use the injected adapter instance
         val adapter = bluetoothAdapter ?: return false // Device doesn't support Bluetooth
-        if (!permissionsManager.hasBluetoothConnectPermission()) {
+        if (!permissionsManager.hasBluetoothConnectPermission()) { // Check needed permission (API 31+)
              Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to check Bluetooth state (API 31+ requirement). Returning false.")
              return false
         }
         return try {
             adapter.isEnabled
-        } catch (e: SecurityException) {
+        } catch (e: SecurityException) { // Catch specific SecurityException
             Log.e(TAG, "SecurityException checking Bluetooth state: ${e.message}", e)
             false
-        } catch (e: Exception) {
+        } catch (e: Exception) { // Catch general exceptions
             Log.e(TAG, "Error checking Bluetooth enabled state: ${e.message}", e)
             false
         }
     }
 
     fun checkBluetoothEnabled(result: MethodChannel.Result) {
-        result.success(isBluetoothEnabled())
+        result.success(isBluetoothEnabled()) // Calls the updated isBluetoothEnabled
     }
 
     @SuppressLint("MissingPermission") // Permission check is done internally for state, intent launch relies on system UI
@@ -134,6 +137,7 @@ class ServiceManager(
             result.error("NO_ACTIVITY", "Activity is not available to request Bluetooth enable", null)
             return
         }
+        // Use the injected adapter instance
         val adapter = bluetoothAdapter
         if (adapter == null) {
              result.error("BLUETOOTH_UNAVAILABLE", "Device does not support Bluetooth.", null)
@@ -141,12 +145,12 @@ class ServiceManager(
         }
 
         // Check permission before checking state (as isEnabled requires it on S+)
-        if (!permissionsManager.hasBluetoothConnectPermission()) {
+        if (!permissionsManager.hasBluetoothConnectPermission()) { // Check needed permission (API 31+)
              result.error("PERMISSION_DENIED", "Missing BLUETOOTH_CONNECT permission (needed for check/enable on API 31+).", null)
              return
         }
 
-        // Check if already enabled
+        // Check if already enabled (now uses the potentially permitted isEnabled call)
         if (adapter.isEnabled) {
             Log.d(TAG, "Bluetooth is already enabled.")
             result.success(true) // Indicate it's already enabled
@@ -156,11 +160,16 @@ class ServiceManager(
         // Create intent to request Bluetooth enable
         val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
         try {
-            // Note: Starting this intent doesn't require explicit runtime permission request here.
+            // Launching ACTION_REQUEST_ENABLE implicitly uses BLUETOOTH_CONNECT on API 31+
+            // if the permission is declared in the manifest. No separate runtime check needed *here*.
             currentActivity.startActivity(enableBtIntent)
-            // currentActivity.startActivityForResult(enableBtIntent, Constants.ENABLE_BLUETOOTH_REQUEST_CODE); // If you needed to handle the result
+            // You usually don't need the result code from this intent; you check the adapter state again later if needed.
             result.success(true) // Indicate the request intent was successfully launched
-        } catch (e: Exception) {
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException launching Bluetooth enable intent: ${e.message}", e)
+            result.error("PERMISSION_ERROR", "Could not launch Bluetooth enable request due to permission issue (check manifest?).", e.message)
+        }
+        catch (e: Exception) {
              Log.e(TAG, "Error launching Bluetooth enable intent: ${e.message}", e)
              result.error("INTENT_ERROR", "Could not launch Bluetooth enable request.", e.message)
         }
