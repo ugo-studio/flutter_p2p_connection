@@ -143,7 +143,10 @@ class _HostPageState extends State<HostPage> {
                     ),
                   );
                 },
-                child: const Text("show hotspot info qrcode"),
+                child: const Text(
+                  "show hotspot info qrcode",
+                  style: TextStyle(color: Colors.blue),
+                ),
               ),
               const SizedBox(height: 30),
             ],
