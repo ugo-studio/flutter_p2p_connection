@@ -12,9 +12,11 @@ import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel.Result
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap // Use thread-safe map
 
 import com.ugo.studio.plugins.flutter_p2p_connection.Constants
 
+@SuppressLint("MissingPermission") // Permissions checked before use
 class BleManager(
     private val context: Context,
     private val bluetoothAdapter: BluetoothAdapter?, // Can be null if BT not supported
@@ -34,6 +36,8 @@ class BleManager(
     private var isAdvertising = false
     private var isScanning = false
     private val connectedDevices = mutableMapOf<String, BluetoothDevice>() // MAC -> Device
+    // Store scan results (Address -> Scan Result Map) - Use ConcurrentHashMap for thread safety
+    private val discoveredDevicesMap = ConcurrentHashMap<String, Map<String, Any>>()
 
     // UUIDs
     private val serviceUuid: UUID = Constants.BLE_CREDENTIAL_SERVICE_UUID
@@ -67,6 +71,7 @@ class BleManager(
         scanResultSink = null
         connectionStateSink = null
         receivedDataSink = null
+        discoveredDevicesMap.clear()
     }
 
     // --- Stream Handlers ---
@@ -75,6 +80,8 @@ class BleManager(
         override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
             Log.d(TAG, "ScanResult Stream Listener Attached")
             scanResultSink = events
+            // Optionally send the current list immediately upon listen
+            sendScanResultListUpdate()
         }
 
         override fun onCancel(arguments: Any?) {
@@ -152,14 +159,13 @@ class BleManager(
 
                 bluetoothLeAdvertiser?.startAdvertising(settings, data, advertiseCallback)
                 Log.d(TAG, "BLE Advertising start requested.")
-                result?.success(true)
-                // Result will be handled in advertiseCallback
+                result?.success(true) // Indicate request was made
+                // Actual start confirmation in advertiseCallback
             } else {
                  Log.e(TAG, "Failed to setup GATT Server, cannot start advertising.")
                  result?.error("GATT_ERROR", "Failed to setup GATT server.", null)
             }
         }
-        // Result handled asynchronously by callback
     }
 
     fun stopBleAdvertising(result: Result?) {
@@ -171,9 +177,7 @@ class BleManager(
         }
         if (!hasPermission(Manifest.permission.BLUETOOTH_ADVERTISE)) {
             Log.w(TAG, "Missing BLUETOOTH_ADVERTISE permission to stop")
-            // Note: Stopping might still work on some OS versions without permission, but best practice is to check
-            // result?.error("PERMISSION_DENIED", "Missing Bluetooth Advertise permission.", null)
-            // return
+            // Continue attempt anyway
         }
          if (bluetoothLeAdvertiser == null) {
              Log.e(TAG, "BLE Advertiser is null, cannot stop advertising (already stopped?).")
@@ -200,12 +204,10 @@ class BleManager(
             result?.error("PERMISSION_DENIED", "Missing Bluetooth Scan permission.", null)
             return
         }
-         // Location might be needed depending on Android version and if deriving location
-         if (!permissionsManager.hasP2pPermissions()) {
-              Log.w(TAG, "Location permission potentially required for BLE scan might be missing.")
-              // result?.error("PERMISSION_DENIED", "Location permission may be required for scanning.", null)
-              // return // Decide if you want to enforce this strictly
-         }
+        if (!permissionsManager.hasP2pPermissions()) { // Assuming this checks location if needed
+            Log.w(TAG, "P2P/Location permission potentially required for BLE scan might be missing.")
+            // Consider if this should be an error
+        }
         if (isScanning) {
             Log.w(TAG, "Scanning already active.")
             result?.success(true) // Indicate it's (already) running
@@ -219,6 +221,10 @@ class BleManager(
                 return
             }
         }
+
+        // Clear previous results when starting a new scan
+        discoveredDevicesMap.clear()
+        sendScanResultListUpdate() // Send empty list initially
 
         // Scan specifically for our service UUID
         val scanFilters = listOf(
@@ -243,9 +249,7 @@ class BleManager(
         }
         if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
             Log.w(TAG, "Missing BLUETOOTH_SCAN permission to stop")
-            // Note: Stopping might still work, but best practice is to check
-            // result?.error("PERMISSION_DENIED", "Missing Bluetooth Scan permission.", null)
-            // return
+            // Continue attempt anyway
         }
          if (bluetoothLeScanner == null) {
              Log.e(TAG, "BLE Scanner is null, cannot stop scan (already stopped?).")
@@ -287,8 +291,8 @@ class BleManager(
             result.error("CONNECTION_FAILED", "Failed to initiate GATT connection.", null)
         } else {
             Log.d(TAG, "GATT connection initiated to $deviceAddress...")
-            result.success(true)
-            // Result (success/failure) handled asynchronously by gattClientCallback
+            result.success(true) // Indicate request was made
+            // Connection success/failure handled asynchronously
         }
     }
 
@@ -313,25 +317,8 @@ class BleManager(
     // --- Helper Methods ---
 
     private fun hasPermission(permission: String): Boolean {
-        if (permission == Manifest.permission.BLUETOOTH_ADVERTISE ||
-            permission == Manifest.permission.BLUETOOTH_SCAN ||
-            permission == Manifest.permission.BLUETOOTH_CONNECT) {
-            // Check only if API level requires the new permissions
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-                // Map to legacy permissions if needed, though PermissionsManager should handle this ideally
-                 if (permission == Manifest.permission.BLUETOOTH_SCAN) {
-                      return ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADMIN) == PackageManager.PERMISSION_GRANTED &&
-                             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                 }
-                 if (permission == Manifest.permission.BLUETOOTH_CONNECT) {
-                      return ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED
-                 }
-                 if (permission == Manifest.permission.BLUETOOTH_ADVERTISE) {
-                     return ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADMIN) == PackageManager.PERMISSION_GRANTED
-                 }
-            }
-        }
-        // Default check for S+ or other permissions
+        // Simplified check relying on PermissionsManager for complex logic if needed elsewhere
+        // This is basic check, assumes PermissionsManager handles the API level differences
         return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -396,7 +383,7 @@ class BleManager(
     private fun closeGattServer() {
         if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
             Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to close GATT server.")
-            // Attempt closing anyway, might work
+            // Attempt closing anyway
         }
         if (gattServer != null) {
             try {
@@ -433,24 +420,29 @@ class BleManager(
         mainHandler.post {
             val stateMap = mapOf(
                 "deviceAddress" to device.address,
-                "deviceName" to (device.name ?: "Unknown"),
+                // Check permission before accessing name on S+
+                "deviceName" to if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) (device.name ?: "Unknown") else "Unknown",
                 "isConnected" to isConnected
             )
-            connectionStateSink?.success(stateMap)
-            Log.d(TAG, "Sent connection state update: ${device.address} -> $isConnected")
+            try {
+                connectionStateSink?.success(stateMap)
+                Log.d(TAG, "Sent connection state update: ${device.address} -> $isConnected")
+            } catch (e: Exception) {
+                 Log.e(TAG, "Error sending connection state update: ${e.message}", e)
+            }
         }
     }
 
-    private fun sendScanResultUpdate(device: BluetoothDevice, rssi: Int) {
+    // New method to send the entire list of discovered devices
+    private fun sendScanResultListUpdate() {
         mainHandler.post {
-        val resultMap = mapOf(
-            "deviceAddress" to device.address,
-            "deviceName" to (device.name ?: "Unknown"),
-            "rssi" to rssi,
-            // "serviceUuids" to result.scanRecord?.serviceUuids?.map { it.toString() } // Optional: include discovered UUIDs
-        )
-            scanResultSink?.success(resultMap)
-            // Log.d(TAG, "Sent scan result: ${device.address}") // Can be noisy
+            val resultsList = ArrayList(discoveredDevicesMap.values)
+            try {
+                scanResultSink?.success(resultsList)
+                Log.d(TAG, "Sent scan result list update. Count: ${resultsList.size}")
+            } catch (e: Exception) {
+                 Log.e(TAG, "Error sending scan result list update: ${e.message}", e)
+            }
         }
     }
 
@@ -461,8 +453,12 @@ class BleManager(
                 "characteristicUuid" to characteristicUuid.toString(),
                 "data" to data // Send as byte array (Uint8List in Flutter)
             )
-            receivedDataSink?.success(dataMap)
-            Log.d(TAG, "Sent received data update: ${device.address} / $characteristicUuid")
+             try {
+                receivedDataSink?.success(dataMap)
+                Log.d(TAG, "Sent received data update: ${device.address} / $characteristicUuid")
+            } catch (e: Exception) {
+                 Log.e(TAG, "Error sending received data update: ${e.message}", e)
+            }
         }
     }
 
@@ -473,7 +469,6 @@ class BleManager(
             super.onStartSuccess(settingsInEffect)
             isAdvertising = true
             Log.i(TAG, "BLE Advertising Started Successfully.")
-            // Maybe notify Flutter via a dedicated state channel if needed
         }
 
         override fun onStartFailure(errorCode: Int) {
@@ -489,23 +484,36 @@ class BleManager(
             }
             Log.e(TAG, "BLE Advertising Failed: $reason")
             closeGattServer() // Ensure server is closed if advertising failed
-            // Notify Flutter of failure?
         }
     }
 
     private val bleScanCallback = object : ScanCallback() {
-        private val foundDevices = mutableSetOf<String>() // Track devices found in this scan session
+        // No longer need foundDevices set here, use discoveredDevicesMap
 
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             super.onScanResult(callbackType, result)
             result?.device?.let { device ->
                  if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { // Needed for name/address access on S+
-                    if (foundDevices.add(device.address)) { // Only report each device once per scan start
-                         Log.d(TAG,"BLE Device Found: ${device.address} (${device.name ?: "Unknown"}) RSSI: ${result.rssi}")
-                         sendScanResultUpdate(device, result.rssi)
+                    val deviceAddress = device.address
+                    val deviceName = device.name ?: "Unknown"
+                    val rssi = result.rssi
+
+                    val resultMap = mapOf(
+                        "deviceAddress" to deviceAddress,
+                        "deviceName" to deviceName,
+                        "rssi" to rssi
+                    )
+
+                    // Add or update the device in the map
+                    val updated = discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap
+                    if(updated) {
+                        Log.d(TAG,"BLE Device Found/Updated: $deviceAddress ($deviceName) RSSI: $rssi")
+                        // Send the updated list to Flutter
+                        sendScanResultListUpdate()
                     } else {
-                        // Keep from throwing error                  
+                        // Skip, not updated
                     }
+
                  } else {
                       Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to process scan result on Android 12+")
                  }
@@ -514,17 +522,32 @@ class BleManager(
 
         override fun onBatchScanResults(results: MutableList<ScanResult>?) {
             super.onBatchScanResults(results)
-            results?.forEach { result ->
+            var listChanged = false
+             results?.forEach { result ->
                  result.device?.let { device ->
                     if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
-                        if (foundDevices.add(device.address)) {
-                             Log.d(TAG,"BLE Device Found (Batch): ${device.address} (${device.name ?: "Unknown"}) RSSI: ${result.rssi}")
-                             sendScanResultUpdate(device, result.rssi)
-                        }
-                     } else {
-                          Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to process batch scan result on Android 12+")
-                     }
+                        val deviceAddress = device.address
+                        val deviceName = device.name ?: "Unknown"
+                        val rssi = result.rssi
+
+                         val resultMap = mapOf(
+                            "deviceAddress" to deviceAddress,
+                            "deviceName" to deviceName,
+                            "rssi" to rssi
+                         )
+
+                         if (discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap) {
+                            listChanged = true
+                             Log.d(TAG,"BLE Device Found/Updated (Batch): $deviceAddress ($deviceName) RSSI: $rssi")
+                         }
+                    } else {
+                        Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to process batch scan result on Android 12+")
+                    }
                 }
+            }
+            // If any device in the batch caused a change, send the full list
+            if (listChanged) {
+                sendScanResultListUpdate()
             }
         }
 
@@ -532,13 +555,16 @@ class BleManager(
             super.onScanFailed(errorCode)
             isScanning = false
             Log.e(TAG, "BLE Scan Failed: $errorCode")
-            mainHandler.post { scanResultSink?.error("SCAN_FAILED", "BLE Scan Failed: $errorCode", null) }
+            mainHandler.post {
+                 try {
+                     scanResultSink?.error("SCAN_FAILED", "BLE Scan Failed: $errorCode", null)
+                 } catch (e: Exception) {
+                     Log.e(TAG, "Error sending scan failed event: ${e.message}", e)
+                 }
+            }
         }
 
-        // Helper to reset found devices when a new scan starts
-        fun resetFoundDevices() {
-            foundDevices.clear()
-        }
+        // No longer need resetFoundDevices
     }
 
 
@@ -556,10 +582,15 @@ class BleManager(
                         Log.i(TAG, "GATT Server: Device Connected - $deviceName ($deviceAddress)")
                         connectedDevices[deviceAddress] = device
                         sendConnectionStateUpdate(device, true)
-                        // Automatically attempt bonding if not already bonded?
                         if(device.bondState == BluetoothDevice.BOND_NONE) {
                             Log.d(TAG, "Requesting bond with $deviceAddress")
-                            device.createBond() // Requires BLUETOOTH_CONNECT
+                            // Check permission before createBond
+                            if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                                device.createBond()
+                            } else {
+                                Log.e(TAG, "Missing BLUETOOTH_CONNECT permission to create bond.")
+                                // Handle situation - perhaps disconnect?
+                            }
                         }
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
@@ -577,7 +608,7 @@ class BleManager(
 
         override fun onCharacteristicReadRequest(device: BluetoothDevice?, requestId: Int, offset: Int, characteristic: BluetoothGattCharacteristic?) {
             super.onCharacteristicReadRequest(device, requestId, offset, characteristic)
-            if (device == null || characteristic == null) {
+            if (device == null || characteristic == null || gattServer == null) {
                  gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH, offset, null)
                  return
             }
@@ -588,13 +619,12 @@ class BleManager(
 
               if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                   Log.e(TAG, "Missing BLUETOOTH_CONNECT permission for GATT server read response.")
-                  gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION, offset, null) // Or appropriate error
+                  gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION, offset, null)
                   return
               }
 
             // Check if the requested characteristic is one of ours
             if (charUuid == ssidCharacteristicUuid || charUuid == pskCharacteristicUuid) {
-                // Optional: Check bonding/encryption state before sending
                  if (device.bondState != BluetoothDevice.BOND_BONDED) {
                      Log.w(TAG, "GATT Server: Denying read request for $charUuid from unbonded device $deviceAddress")
                      gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION, offset, null)
@@ -604,25 +634,23 @@ class BleManager(
                 // Respond with the characteristic's current value
                 val value = characteristic.value
                  val responseValue = if (value != null && offset < value.size) {
-                     value.copyOfRange(offset, value.size) // Handle offset if needed
+                     value.copyOfRange(offset, value.size)
                  } else {
-                     null // Or empty byte array if offset is out of bounds
+                     byteArrayOf() // Send empty array if offset invalid or value null
                  }
 
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, responseValue)
                 Log.d(TAG, "GATT Server: Sent response for $charUuid to $deviceAddress")
             } else {
-                // Characteristic not recognized or not readable
                 Log.w(TAG, "GATT Server: Read request for unknown/unreadable characteristic $charUuid from $deviceAddress")
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_READ_NOT_PERMITTED, offset, null)
             }
         }
 
-        // Implement onCharacteristicWriteRequest, onDescriptorReadRequest, etc. if needed
          override fun onCharacteristicWriteRequest(device: BluetoothDevice?, requestId: Int, characteristic: BluetoothGattCharacteristic?, preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray?) {
              super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value)
              Log.w(TAG, "GATT Server: Received unexpected write request for ${characteristic?.uuid} from ${device?.address}. Denying.")
-             if (responseNeeded && device != null) {
+             if (responseNeeded && device != null && gattServer != null) {
                 if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                      gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_WRITE_NOT_PERMITTED, offset, null)
                 }
@@ -638,8 +666,6 @@ class BleManager(
                  closeGattServer() // Clean up if service add fails
             }
         }
-
-         // Add override for onDescriptorWriteRequest if you add descriptors (e.g., for notifications)
     }
 
 
@@ -655,10 +681,12 @@ class BleManager(
                         Log.i(TAG, "GATT Client: Connected to $deviceName ($deviceAddress)")
                         clientGatt = gatt // Store the connected gatt instance
                         sendConnectionStateUpdate(device, true)
-                        // Discover services after connecting
                         if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                             Log.d(TAG, "GATT Client: Discovering services for $deviceAddress...")
-                            gatt.discoverServices()
+                            if (!gatt.discoverServices()) {
+                                Log.e(TAG,"GATT Client: Failed to initiate service discovery for $deviceAddress")
+                                gatt.disconnect()
+                            }
                         } else {
                             Log.e(TAG, "Missing BLUETOOTH_CONNECT to discover services. Disconnecting.")
                             gatt.disconnect()
@@ -689,7 +717,6 @@ class BleManager(
             Log.d(TAG, "GATT Client: Services discovered for $deviceAddress with status $status")
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                // Find our specific service
                 val credentialService = gatt.getService(serviceUuid)
                 if (credentialService == null) {
                     Log.e(TAG, "GATT Client: Credential service ($serviceUuid) not found on $deviceAddress.")
@@ -697,18 +724,15 @@ class BleManager(
                     return
                 }
 
-                // Find characteristics
                 val ssidChar = credentialService.getCharacteristic(ssidCharacteristicUuid)
                 val pskChar = credentialService.getCharacteristic(pskCharacteristicUuid)
 
                 if (ssidChar != null && pskChar != null) {
                     Log.d(TAG, "GATT Client: Found SSID and PSK characteristics. Reading SSID...")
-                    // Read characteristics (sequentially is often safer)
                     if (!gatt.readCharacteristic(ssidChar)) {
                         Log.e(TAG, "GATT Client: Failed to initiate read for SSID characteristic.")
                         gatt.disconnect()
                     }
-                    // PSK will be read in onCharacteristicRead after SSID read completes
                 } else {
                     Log.e(TAG, "GATT Client: SSID ($ssidCharacteristicUuid) or PSK ($pskCharacteristicUuid) characteristic not found.")
                     gatt.disconnect()
@@ -732,7 +756,6 @@ class BleManager(
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 sendReceivedDataUpdate(device, charUuid, value) // Send raw data to Flutter
 
-                // Decide what to do next based on which characteristic was read
                 if (charUuid == ssidCharacteristicUuid) {
                     Log.d(TAG, "GATT Client: Read SSID successful. Reading PSK...")
                     val pskChar = gatt.getService(serviceUuid)?.getCharacteristic(pskCharacteristicUuid)
@@ -747,8 +770,8 @@ class BleManager(
                     }
                 } else if (charUuid == pskCharacteristicUuid) {
                     Log.i(TAG, "GATT Client: Read PSK successful. Credentials received.")
-                    // Optional: Disconnect after getting credentials?
-                    // gatt.disconnect()
+                    // Optional: Automatically disconnect after reading PSK?
+                    gatt.disconnect()
                 }
 
             } else {
@@ -763,15 +786,13 @@ class BleManager(
             characteristic: BluetoothGattCharacteristic?,
             status: Int
         ) {
-             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
                 if (characteristic != null && gatt != null) {
-                     onCharacteristicRead(gatt, characteristic, characteristic.value ?: byteArrayOf(), status)
+                    // Use characteristic.value for legacy callback data
+                    onCharacteristicRead(gatt, characteristic, characteristic.value ?: byteArrayOf(), status)
                 }
-             }
+            }
         }
-
-        // Implement onCharacteristicWrite if needed
-        // Implement onCharacteristicChanged if subscribing to notifications/indications
     }
 
 }

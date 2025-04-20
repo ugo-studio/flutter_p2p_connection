@@ -9,84 +9,18 @@ import 'flutter_p2p_connection_platform_interface.dart';
 // const _transportDefaultPort = 8858;
 
 class FlutterP2pConnectionBle {
-  // Private variables
-  bool _isAdvertising = false;
-  bool _isScanning = false;
-
-  // Public variables
-  bool get isAdvertising => _isAdvertising;
-  bool get isScanning => _isScanning;
-
-  // Methods
-
-  Future<void> dispose() async {
-    _isAdvertising = false;
-    _isScanning = false;
-    await stopAdvertising();
-    await stopScan();
-  }
-
-  Future<void> startAdvertising(String ssid, String psk) async {
-    if (_isAdvertising) {
-      await stopAdvertising();
-    }
-    await FlutterP2pConnectionPlatform.instance.startBleAdvertising(ssid, psk);
-    _isAdvertising = true;
-  }
-
-  Future<void> stopAdvertising() async {
-    await FlutterP2pConnectionPlatform.instance.stopBleAdvertising();
-    _isAdvertising = false;
-  }
-
-  Future<StreamSubscription<BleFoundDevice>> startScan(
-    void Function(BleFoundDevice)? onData, {
-    Function? onError,
-    void Function()? onDone,
-    bool? cancelOnError,
-    Duration timeout = const Duration(seconds: 15),
-  }) async {
-    var streamSub =
-        FlutterP2pConnectionPlatform.instance.streamBleScanResult().listen(
-              onData,
-              onError: onError,
-              onDone: onDone,
-              cancelOnError: cancelOnError,
-            );
-    Future.delayed(timeout).then((_) async {
-      await streamSub.cancel();
-      await stopScan();
-    });
-
-    try {
-      await FlutterP2pConnectionPlatform.instance.startBleScan();
-    } catch (_) {
-      await streamSub.cancel();
-      await stopScan();
-      rethrow;
-    }
-
-    _isScanning = true;
-    return streamSub;
-  }
-
-  Future<void> stopScan() async {
-    await FlutterP2pConnectionPlatform.instance.stopBleScan();
-    _isScanning = false;
-  }
+  Future<void> dispose() async {}
 
   Future<StreamSubscription<BleReceivedData>> connectDevice(
     String deviceAddress, {
     void Function(BleReceivedData)? onData,
     Function? onError,
-    void Function()? onDone,
     bool? cancelOnError,
   }) async {
     await FlutterP2pConnectionPlatform.instance.connectBleDevice(deviceAddress);
     return FlutterP2pConnectionPlatform.instance.streamBleReceivedData().listen(
           onData,
           onError: onError,
-          onDone: onDone,
           cancelOnError: cancelOnError,
         );
   }
@@ -105,10 +39,13 @@ class FlutterP2pConnectionBle {
 /// It provides methods to create and manage a hotspot for P2P connections.
 class FlutterP2pConnectionHost {
   // Private variables
+  bool _isGroupCreated = false;
+  bool _isBleAdvertising = false;
   P2pTransportHost? _p2pTransport;
 
   // Public variables
-  P2pTransportHost? get p2pTransport => _p2pTransport;
+  bool get isGroupCreated => _isGroupCreated;
+  bool get isAdvertising => _isBleAdvertising;
 
   // Methods
 
@@ -128,18 +65,46 @@ class FlutterP2pConnectionHost {
   }
 
   /// Creates a hotspot for P2P connections.
-  Future<void> createGroup() async {
+  Future<HotspotHostState> createGroup({advertise = true}) async {
     // Create hotspot
     await FlutterP2pConnectionPlatform.instance.createHotspot();
+    _isGroupCreated = true;
+    // get hotspot state
+    var state = await onHotspotStateChanged()
+        .timeout(const Duration(seconds: 5))
+        .firstWhere(
+          (state) => state.ssid != null && state.preSharedKey != null,
+          orElse: () => HotspotHostState(isActive: false),
+        );
+    // valid hotspot state
+    if (state.ssid == null || state.preSharedKey == null) {
+      throw Exception('Failed to get hotspot ssid and psk');
+    }
+    // Start ble advertising if allowed
+    if (!advertise) {
+      _isBleAdvertising = false;
+      return state; // return hotspot sate
+    }
+    // Start ble advertisment
+    await FlutterP2pConnectionPlatform.instance.startBleAdvertising(
+      state.ssid!,
+      state.preSharedKey!,
+    );
+    _isBleAdvertising = true;
+    return state; // return hotspot sate
   }
 
   /// Removes the hotspot and stops the transport.
   Future<void> removeGroup() async {
+    // Stop ble advertisment
+    await FlutterP2pConnectionPlatform.instance.stopBleAdvertising();
+    _isBleAdvertising = false;
     // Stop the transport if it is running
     await _p2pTransport?.stop();
     _p2pTransport = null;
     // Remove the hotspot
     await FlutterP2pConnectionPlatform.instance.removeHotspot();
+    _isGroupCreated = false;
   }
 
   /// Streams hostspot information.
@@ -155,7 +120,11 @@ class FlutterP2pConnectionHost {
 /// It provides methods to connect to a hotspot and manage the connection.
 class FlutterP2pConnectionClient {
   // Private variables
+  bool _isScanning = false;
   P2pTransportClient? _p2pTransport;
+
+  // Public variables
+  bool get isScanning => _isScanning;
 
   // Methods
   /// Initializes the P2P connection client.
@@ -166,9 +135,49 @@ class FlutterP2pConnectionClient {
 
   /// Disposes the P2P connection client and stops the transport.
   Future<void> dispose() async {
+    await stopScan()
+        .catchError((_) => null); // Always stop scanning before disposing
     await disconnectFromHotspot()
         .catchError((_) => null); // Always disconnect hotspot before disposing
     await FlutterP2pConnectionPlatform.instance.dispose();
+  }
+
+  Future<StreamSubscription<List<BleFoundDevice>>> startScan(
+    void Function(List<BleFoundDevice>)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    // Start streaming scan results before starting scan
+    var streamSub =
+        FlutterP2pConnectionPlatform.instance.streamBleScanResult().listen(
+              onData,
+              onError: onError,
+              onDone: onDone,
+              cancelOnError: cancelOnError,
+            );
+    // Apply timeout to stream
+    Future.delayed(timeout).then((_) async {
+      await streamSub.cancel();
+      await stopScan();
+    });
+    // Start scanning for devices
+    try {
+      await FlutterP2pConnectionPlatform.instance.startBleScan();
+      _isScanning = true;
+      // return scan results stream subscription
+      return streamSub;
+    } catch (_) {
+      await streamSub.cancel();
+      await stopScan();
+      rethrow;
+    }
+  }
+
+  Future<void> stopScan() async {
+    await FlutterP2pConnectionPlatform.instance.stopBleScan();
+    _isScanning = false;
   }
 
   /// Connects to a hotspot using the provided SSID and password.

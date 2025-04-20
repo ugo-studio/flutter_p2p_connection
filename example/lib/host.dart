@@ -13,7 +13,6 @@ class HostPage extends StatefulWidget {
 
 class _HostPageState extends State<HostPage> {
   late FlutterP2pConnection p2p;
-  late StreamSubscription<HotspotHostState> hotspotStateSubscription;
 
   HotspotHostState? hotspotState;
 
@@ -22,17 +21,11 @@ class _HostPageState extends State<HostPage> {
     super.initState();
     p2p = FlutterP2pConnection();
     p2p.host.initialize();
-
-    hotspotStateSubscription = p2p.host.onHotspotStateChanged().listen((state) {
-      hotspotState = state;
-      setState(() {});
-    });
   }
 
   @override
   void dispose() {
     p2p.host.dispose();
-    hotspotStateSubscription.cancel();
     super.dispose();
   }
 
@@ -72,7 +65,7 @@ class _HostPageState extends State<HostPage> {
 
   void createGroup() async {
     try {
-      await p2p.host.createGroup();
+      hotspotState = await p2p.host.createGroup();
       snack("created group");
     } catch (e) {
       snack("failed to create group: $e");
@@ -99,25 +92,6 @@ class _HostPageState extends State<HostPage> {
         ),
       ),
     );
-  }
-
-  void shareHotspotWithBluetooth() async {
-    // var ssid = hotspotState?.ssid;
-    // var psk = hotspotState?.preSharedKey;
-    // if (ssid == null || psk == null) {
-    //   snack("ssid or psk is null");
-    // } else {
-    //   await p2p.bluetooth.startAdvertising(ssid, psk);
-    //   snack("advertising started");
-    // }
-    if (p2p.bluetooth.isAdvertising) {
-      await p2p.bluetooth.stopAdvertising();
-      snack("advertisement stopped");
-      return;
-    }
-
-    await p2p.bluetooth.startAdvertising('hello', 'world');
-    snack("advertisement started");
   }
 
   @override
@@ -155,7 +129,7 @@ class _HostPageState extends State<HostPage> {
               const SizedBox(height: 30),
 
               // hotspot services
-              hotspotState?.isActive == true
+              p2p.host.isGroupCreated
                   ? ElevatedButton(
                       onPressed: removeGroup,
                       child: const Text(
@@ -173,20 +147,15 @@ class _HostPageState extends State<HostPage> {
               const SizedBox(height: 30),
 
               // hotspot creds share methods
-              ElevatedButton(
-                onPressed: shareHotspotWithQrcode,
-                child: const Text(
-                  "share hotspot creds via qrcode",
-                  style: TextStyle(color: Colors.black),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: shareHotspotWithBluetooth,
-                child: const Text(
-                  "share hotspot creds via bluetooth",
-                  style: TextStyle(color: Colors.blue),
-                ),
-              ),
+              p2p.host.isGroupCreated
+                  ? ElevatedButton(
+                      onPressed: shareHotspotWithQrcode,
+                      child: const Text(
+                        "share hotspot creds via qrcode",
+                        style: TextStyle(color: Colors.black),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
               const SizedBox(height: 30),
             ],
           ),

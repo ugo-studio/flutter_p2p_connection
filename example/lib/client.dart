@@ -100,20 +100,38 @@ class _ClientPageState extends State<ClientPage> {
   }
 
   void startBluetoothPeerDiscovery() async {
-    await p2p.bluetooth.startScan((result) {
+    await p2p.client.startScan((devices) {
       setState(() {
-        foundDevices.add(result);
+        foundDevices = devices;
+        connectedDeviceIndex = null;
       });
     });
     snack('started peer discovery');
   }
 
-  void connectToBleDevice(BleFoundDevice device) async {
-    await p2p.bluetooth.connectDevice(device.deviceAddress);
+  void connectToBleDevice(int index) async {
+    var device = foundDevices[index];
+    setState(() {
+      connectedDeviceIndex = index;
+    });
+    await p2p.bluetooth.connectDevice(
+      device.deviceAddress,
+      onData: (evt) async {
+        print(evt.deviceAddress);
+        print(evt.data);
+
+        String dataString = String.fromCharCodes(evt.data);
+        print(dataString);
+      },
+    );
     snack('connected to ${device.deviceAddress}');
   }
 
-  void disconnectFromBleDevice(BleFoundDevice device) async {
+  void disconnectFromBleDevice(int index) async {
+    var device = foundDevices[index];
+    setState(() {
+      connectedDeviceIndex = null;
+    });
     await p2p.bluetooth.disconnectDevice(device.deviceAddress);
     snack('disconnected from ${device.deviceAddress}');
   }
@@ -193,9 +211,9 @@ class _ClientPageState extends State<ClientPage> {
                     trailing: ElevatedButton(
                       onPressed: () {
                         if (connectedDeviceIndex == index) {
-                          disconnectFromBleDevice(foundDevices[index]);
+                          disconnectFromBleDevice(index);
                         } else {
-                          connectToBleDevice(foundDevices[index]);
+                          connectToBleDevice(index);
                         }
                       },
                       child: Text(

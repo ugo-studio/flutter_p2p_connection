@@ -196,10 +196,12 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   }
 
   @override
-  Stream<BleFoundDevice> streamBleScanResult() {
+  Stream<List<BleFoundDevice>> streamBleScanResult() {
     var stream = bleScanResultEventChannel.receiveBroadcastStream().map(
       (dynamic evt) {
-        return BleFoundDevice.fromMap(Map.from(evt));
+        return List.from(evt)
+            .map((device) => BleFoundDevice.fromMap(Map.from(device)))
+            .toList();
       },
     );
     return stream;
