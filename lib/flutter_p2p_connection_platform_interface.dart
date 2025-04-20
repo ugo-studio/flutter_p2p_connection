@@ -49,13 +49,37 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     throw UnimplementedError('removeHotspot() has not been implemented.');
   }
 
-  Future<void> connectToHotspot(String ssid, String password) async {
+  Future<void> connectToHotspot(String ssid, String psk) async {
     throw UnimplementedError('connectToHotspot() has not been implemented.');
   }
 
   Future<void> disconnectFromHotspot() async {
     throw UnimplementedError(
         'disconnectFromHotspot() has not been implemented.');
+  }
+
+  Future<void> startBleAdvertising(String ssid, String psk) async {
+    throw UnimplementedError('startBleAdvertising() has not been implemented.');
+  }
+
+  Future<void> stopBleAdvertising() async {
+    throw UnimplementedError('stopBleAdvertising() has not been implemented.');
+  }
+
+  Future<void> startBleScan() async {
+    throw UnimplementedError('startBleScan() has not been implemented.');
+  }
+
+  Future<void> stopBleScan() async {
+    throw UnimplementedError('stopBleScan() has not been implemented.');
+  }
+
+  Future<void> connectBleDevice(String deviceAddress) async {
+    throw UnimplementedError('connectBleDevice() has not been implemented.');
+  }
+
+  Future<void> disconnectBleDevice(String deviceAddress) async {
+    throw UnimplementedError('disconnectBleDevice() has not been implemented.');
   }
 
   Future<bool> checkP2pPermissions() async {
@@ -101,5 +125,19 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
   Stream<HotspotClientState> streamHotspotClientState() {
     throw UnimplementedError(
         'streamHotspotClientState() has not been implemented.');
+  }
+
+  Stream<BleConnectionState> streamBleConnectionState() {
+    throw UnimplementedError(
+        'streamBleConnectionState() has not been implemented.');
+  }
+
+  Stream<BleFoundDevice> streamBleScanResult() {
+    throw UnimplementedError('streamBleScanResult() has not been implemented.');
+  }
+
+  Stream<BleReceivedData> streamBleReceivedData() {
+    throw UnimplementedError(
+        'streamBleReceivedData() has not been implemented.');
   }
 }

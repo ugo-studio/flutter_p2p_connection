@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_p2p_connection/p2p_transport.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -6,6 +7,99 @@ import 'flutter_p2p_connection_platform_interface.dart';
 
 // const _maxNetworkInfoPoolingTime = Duration(seconds: 6);
 // const _transportDefaultPort = 8858;
+
+class FlutterP2pConnectionBle {
+  // Private variables
+  bool _isAdvertising = false;
+  bool _isScanning = false;
+
+  // Public variables
+  bool get isAdvertising => _isAdvertising;
+  bool get isScanning => _isScanning;
+
+  // Methods
+
+  Future<void> dispose() async {
+    _isAdvertising = false;
+    _isScanning = false;
+    await stopAdvertising();
+    await stopScan();
+  }
+
+  Future<void> startAdvertising(String ssid, String psk) async {
+    if (_isAdvertising) {
+      await stopAdvertising();
+    }
+    await FlutterP2pConnectionPlatform.instance.startBleAdvertising(ssid, psk);
+    _isAdvertising = true;
+  }
+
+  Future<void> stopAdvertising() async {
+    await FlutterP2pConnectionPlatform.instance.stopBleAdvertising();
+    _isAdvertising = false;
+  }
+
+  Future<StreamSubscription<BleFoundDevice>> startScan(
+    void Function(BleFoundDevice)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    var streamSub =
+        FlutterP2pConnectionPlatform.instance.streamBleScanResult().listen(
+              onData,
+              onError: onError,
+              onDone: onDone,
+              cancelOnError: cancelOnError,
+            );
+    Future.delayed(timeout).then((_) async {
+      await streamSub.cancel();
+      await stopScan();
+    });
+
+    try {
+      await FlutterP2pConnectionPlatform.instance.startBleScan();
+    } catch (_) {
+      await streamSub.cancel();
+      await stopScan();
+      rethrow;
+    }
+
+    _isScanning = true;
+    return streamSub;
+  }
+
+  Future<void> stopScan() async {
+    await FlutterP2pConnectionPlatform.instance.stopBleScan();
+    _isScanning = false;
+  }
+
+  Future<StreamSubscription<BleReceivedData>> connectDevice(
+    String deviceAddress, {
+    void Function(BleReceivedData)? onData,
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) async {
+    await FlutterP2pConnectionPlatform.instance.connectBleDevice(deviceAddress);
+    return FlutterP2pConnectionPlatform.instance.streamBleReceivedData().listen(
+          onData,
+          onError: onError,
+          onDone: onDone,
+          cancelOnError: cancelOnError,
+        );
+  }
+
+  Future<void> disconnectDevice(String deviceAddress) async {
+    await FlutterP2pConnectionPlatform.instance
+        .disconnectBleDevice(deviceAddress);
+  }
+
+  Stream<BleConnectionState> onConnectionStateChanged() {
+    return FlutterP2pConnectionPlatform.instance.streamBleConnectionState();
+  }
+}
 
 /// The [FlutterP2pConnectionHost] class represents a host for P2P connections.
 /// It provides methods to create and manage a hotspot for P2P connections.
@@ -27,8 +121,9 @@ class FlutterP2pConnectionHost {
 
   /// Disposes the P2P connection host and stops the transport.
   Future<void> dispose() async {
-    await removeGroup()
-        .catchError((_) => null); // Always remove group before disposing
+    await removeGroup().catchError(
+      (_) => null,
+    ); // Always remove group before disposing
     await FlutterP2pConnectionPlatform.instance.dispose();
   }
 
@@ -136,43 +231,43 @@ class FlutterP2pConnection {
     return await checkWifiEnabled();
   }
 
-  // /// Check if Bluetooth is enabled.
-  // /// This method checks if the Bluetooth is enabled on the device.
-  // Future<bool> checkBluetoothEnabled() async =>
-  //     await FlutterP2pConnectionPlatform.instance.checkBluetoothEnabled();
+  /// Check if Bluetooth is enabled.
+  /// This method checks if the Bluetooth is enabled on the device.
+  Future<bool> checkBluetoothEnabled() async =>
+      await FlutterP2pConnectionPlatform.instance.checkBluetoothEnabled();
 
-  // /// Enable Bluetooth services.
-  // /// This method takes user to the bluetooth settings to enable Bluetooth services on the device.
-  // Future<bool> enableBluetoothServices() async {
-  //   await FlutterP2pConnectionPlatform.instance.enableBluetoothServices();
-  //   return await checkBluetoothEnabled();
-  // }
+  /// Enable Bluetooth services.
+  /// This method takes user to the bluetooth settings to enable Bluetooth services on the device.
+  Future<bool> enableBluetoothServices() async {
+    await FlutterP2pConnectionPlatform.instance.enableBluetoothServices();
+    return await checkBluetoothEnabled();
+  }
 
-  // /// Check if bluetooth permissions are granted.
-  // Future<bool> checkBluetoothPermissions() async {
-  //   var perms = [
-  //     Permission.bluetoothConnect.status,
-  //     Permission.bluetoothAdvertise.status,
-  //     Permission.bluetoothScan.status,
-  //   ];
-  //   for (var perm in perms) {
-  //     if (!(await perm.isGranted)) {
-  //       return false;
-  //     }
-  //   }
-  //   return true;
-  // }
+  /// Check if bluetooth permissions are granted.
+  Future<bool> checkBluetoothPermissions() async {
+    var perms = [
+      Permission.bluetoothConnect.status,
+      Permission.bluetoothAdvertise.status,
+      Permission.bluetoothScan.status,
+    ];
+    for (var perm in perms) {
+      if (!(await perm.isGranted)) {
+        return false;
+      }
+    }
+    return true;
+  }
 
-  // /// Ask for Bluetooth permissions.
-  // Future<bool> askBluetoothPermissions() async {
-  //   await [
-  //     Permission.bluetooth,
-  //     Permission.bluetoothAdvertise,
-  //     Permission.bluetoothScan,
-  //     Permission.bluetoothConnect
-  //   ].request();
-  //   return await checkBluetoothPermissions();
-  // }
+  /// Ask for Bluetooth permissions.
+  Future<bool> askBluetoothPermissions() async {
+    await [
+      Permission.bluetooth,
+      Permission.bluetoothAdvertise,
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect
+    ].request();
+    return await checkBluetoothPermissions();
+  }
 
   /// Check if P2P permissions are granted.
   /// This method checks if the necessary permissions for P2P connections (NEARBY_WIFI_DEVICES, ACCESS_FINE_LOCATION and CHANGE_WIFI_STATE) are granted.
@@ -207,6 +302,8 @@ class FlutterP2pConnection {
   /// This method returns an instance of [FlutterP2pConnectionClient] class.
   /// This class provides methods to manage P2P connections as a client.
   FlutterP2pConnectionClient client = FlutterP2pConnectionClient();
+
+  FlutterP2pConnectionBle bluetooth = FlutterP2pConnectionBle();
 }
 
 /// The [HotspotHostState] class represents the state of a hotspot host.
@@ -273,13 +370,64 @@ class HotspotClientState {
       hostIpAddress: map['hostIpAddress'] as String?,
     );
   }
+}
 
-  Map<String, dynamic> toMap() {
-    return {
-      'isActive': isActive,
-      'hostSsid': hostSsid,
-      'hostGatewayIpAddress': hostGatewayIpAddress,
-      'hostIpAddress': hostIpAddress,
-    };
+class BleConnectionState {
+  final String deviceAddress;
+  final String deviceName;
+  final bool isConnected;
+
+  BleConnectionState({
+    required this.deviceAddress,
+    required this.deviceName,
+    required this.isConnected,
+  });
+
+  factory BleConnectionState.fromMap(Map<dynamic, dynamic> map) {
+    return BleConnectionState(
+      deviceAddress: map['deviceAddress'] as String,
+      deviceName: map['deviceName'] as String,
+      isConnected: map['isConnected'] as bool,
+    );
+  }
+}
+
+class BleFoundDevice {
+  final String deviceAddress;
+  final String deviceName;
+  final int rssi;
+
+  BleFoundDevice({
+    required this.deviceAddress,
+    required this.deviceName,
+    required this.rssi,
+  });
+
+  factory BleFoundDevice.fromMap(Map<dynamic, dynamic> map) {
+    return BleFoundDevice(
+      deviceAddress: map['deviceAddress'] as String,
+      deviceName: map['deviceName'] as String,
+      rssi: map['rssi'] as int,
+    );
+  }
+}
+
+class BleReceivedData {
+  final String deviceAddress;
+  final String characteristicUuid;
+  final Uint8List data;
+
+  BleReceivedData({
+    required this.deviceAddress,
+    required this.characteristicUuid,
+    required this.data,
+  });
+
+  factory BleReceivedData.fromMap(Map<dynamic, dynamic> map) {
+    return BleReceivedData(
+      deviceAddress: map['deviceAddress'] as String,
+      characteristicUuid: map['characteristicUuid'] as String,
+      data: map['data'] as Uint8List,
+    );
   }
 }

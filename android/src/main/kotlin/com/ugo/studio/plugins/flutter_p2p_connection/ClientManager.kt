@@ -44,7 +44,7 @@ class ClientManager(
     }
 
     @SuppressLint("MissingPermission")
-    fun connectToHotspot(result: MethodChannel.Result, ssid: String, password: String) {
+    fun connectToHotspot(result: MethodChannel.Result, ssid: String, psk: String) {
         // Permissions checked by main plugin before calling
         // Use injected serviceManager for checks
         if (!serviceManager.isWifiEnabled()) {
@@ -56,9 +56,9 @@ class ClientManager(
         disconnectClientInternal()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            connectToHotspotApi29(result, ssid, password)
+            connectToHotspotApi29(result, ssid, psk)
         } else {
-            connectToHotspotLegacy(result, ssid, password)
+            connectToHotspotLegacy(result, ssid, psk)
         }
     }
 
@@ -136,12 +136,12 @@ class ClientManager(
 
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun connectToHotspotApi29(result: MethodChannel.Result, ssid: String, password: String) {
+    private fun connectToHotspotApi29(result: MethodChannel.Result, ssid: String, psk: String) {
         try {
             Log.d(TAG, "Building WifiNetworkSpecifier for SSID: $ssid (API 29+)")
             val specifier = WifiNetworkSpecifier.Builder()
                 .setSsid(ssid)
-                .setWpa2Passphrase(password)
+                .setWpa2Passphrase(psk)
                 .build()
             val request = NetworkRequest.Builder()
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
@@ -254,7 +254,7 @@ class ClientManager(
 
 
     @SuppressLint("MissingPermission", "Deprecated")
-    private fun connectToHotspotLegacy(result: MethodChannel.Result, ssid: String, password: String) {
+    private fun connectToHotspotLegacy(result: MethodChannel.Result, ssid: String, psk: String) {
         try {
             Log.d(TAG, "Building legacy WifiConfiguration for SSID: $ssid (API < 29)")
 
@@ -286,7 +286,7 @@ class ClientManager(
 
             val config = WifiConfiguration().apply {
                 SSID = "\"$ssid\""
-                preSharedKey = "\"$password\""
+                preSharedKey = "\"$psk\""
                 status = WifiConfiguration.Status.ENABLED
                 allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_PSK)
                 priority = 40 // Higher priority for this network

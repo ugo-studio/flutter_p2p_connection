@@ -18,6 +18,15 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   @visibleForTesting
   final EventChannel clientStateEventChannel =
       const EventChannel('flutter_p2p_connection_clientState');
+  @visibleForTesting
+  final EventChannel bleConnectionStateEventChannel =
+      const EventChannel('flutter_p2p_connection_bleConnectionState');
+  @visibleForTesting
+  final EventChannel bleScanResultEventChannel =
+      const EventChannel('flutter_p2p_connection_bleScanResult');
+  @visibleForTesting
+  final EventChannel bleReceivedDataEventChannel =
+      const EventChannel('flutter_p2p_connection_bleReceivedData');
 
   @override
   Future<String> getPlatformVersion() async {
@@ -52,16 +61,61 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   }
 
   @override
-  Future<void> connectToHotspot(String ssid, String password) async {
-    await methodChannel.invokeMethod('connectToHotspot', {
-      'ssid': ssid,
-      'password': password,
-    });
+  Future<void> connectToHotspot(String ssid, String psk) async {
+    await methodChannel.invokeMethod(
+      'connectToHotspot',
+      {
+        'ssid': ssid,
+        'psk': psk,
+      },
+    );
   }
 
   @override
   Future<void> disconnectFromHotspot() async {
     await methodChannel.invokeMethod('disconnectFromHotspot');
+  }
+
+  @override
+  Future<void> startBleAdvertising(String ssid, String psk) async {
+    await methodChannel.invokeMethod(
+      'ble#startAdvertising',
+      {
+        'ssid': ssid,
+        'psk': psk,
+      },
+    );
+  }
+
+  @override
+  Future<void> stopBleAdvertising() async {
+    await methodChannel.invokeMethod('ble#stopAdvertising');
+  }
+
+  @override
+  Future<void> startBleScan() async {
+    await methodChannel.invokeMethod('ble#startScan');
+  }
+
+  @override
+  Future<void> stopBleScan() async {
+    await methodChannel.invokeMethod('ble#stopScan');
+  }
+
+  @override
+  Future<void> connectBleDevice(String deviceAddress) async {
+    await methodChannel.invokeMethod(
+      'ble#connect',
+      {'deviceAddress': deviceAddress},
+    );
+  }
+
+  @override
+  Future<void> disconnectBleDevice(String deviceAddress) async {
+    await methodChannel.invokeMethod(
+      'ble#disconnect',
+      {'deviceAddress': deviceAddress},
+    );
   }
 
   @override
@@ -98,6 +152,7 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
     await methodChannel.invokeMethod('enableWifiServices');
   }
 
+  @override
   Future<bool> checkBluetoothEnabled() async {
     bool? enabled = await methodChannel.invokeMethod('checkBluetoothEnabled');
     return enabled ?? false;
@@ -125,6 +180,36 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
     var stream = clientStateEventChannel.receiveBroadcastStream().map(
       (dynamic evt) {
         return HotspotClientState.fromMap(Map.from(evt));
+      },
+    );
+    return stream;
+  }
+
+  @override
+  Stream<BleConnectionState> streamBleConnectionState() {
+    var stream = bleConnectionStateEventChannel.receiveBroadcastStream().map(
+      (dynamic evt) {
+        return BleConnectionState.fromMap(Map.from(evt));
+      },
+    );
+    return stream;
+  }
+
+  @override
+  Stream<BleFoundDevice> streamBleScanResult() {
+    var stream = bleScanResultEventChannel.receiveBroadcastStream().map(
+      (dynamic evt) {
+        return BleFoundDevice.fromMap(Map.from(evt));
+      },
+    );
+    return stream;
+  }
+
+  @override
+  Stream<BleReceivedData> streamBleReceivedData() {
+    var stream = bleReceivedDataEventChannel.receiveBroadcastStream().map(
+      (dynamic evt) {
+        return BleReceivedData.fromMap(Map.from(evt));
       },
     );
     return stream;

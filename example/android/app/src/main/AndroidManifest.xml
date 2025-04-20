@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- storage permissions  -->
@@ -9,9 +10,9 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Nearby Devices Permissions (Android 13 / API 33+) -->
-    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" 
-                     android:usesPermissionFlags="neverForLocation"
-                     tools:targetApi="tiramisu" />
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="tiramisu" />
 
     <!-- wifi permissions  -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -22,19 +23,19 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <!-- bluetooth permissions -->
-    <uses-permission android:name="android.permission.BLUETOOTH" 
-                     android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
-                     android:maxSdkVersion="30" />
+        android:maxSdkVersion="30" />
 
     <!-- Bluetooth Permissions (New - Android 12 / API 31+) -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"
-                     tools:targetApi="s" />
+        tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-                     android:usesPermissionFlags="neverForLocation"
-                     tools:targetApi="s" />
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"
-                     tools:targetApi="s"/>
+        tools:targetApi="s" />
 
     <!-- Essential specifically for Bluetooth Low Energy (BLE) -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />

@@ -152,6 +152,7 @@ class BleManager(
 
                 bluetoothLeAdvertiser?.startAdvertising(settings, data, advertiseCallback)
                 Log.d(TAG, "BLE Advertising start requested.")
+                result?.success(true)
                 // Result will be handled in advertiseCallback
             } else {
                  Log.e(TAG, "Failed to setup GATT Server, cannot start advertising.")
@@ -200,7 +201,7 @@ class BleManager(
             return
         }
          // Location might be needed depending on Android version and if deriving location
-         if (!permissionsManager.hasLocationPermissionIfRequired()) {
+         if (!permissionsManager.hasP2pPermissions()) {
               Log.w(TAG, "Location permission potentially required for BLE scan might be missing.")
               // result?.error("PERMISSION_DENIED", "Location permission may be required for scanning.", null)
               // return // Decide if you want to enforce this strictly
@@ -210,14 +211,14 @@ class BleManager(
             result?.success(true) // Indicate it's (already) running
             return
         }
-         if (bluetoothLeScanner == null) {
-              bluetoothLeScanner = bluetoothAdapter?.bluetoothLeScanner // Try again
-              if (bluetoothLeScanner == null) {
-                  Log.e(TAG, "BLE Scanner is null, cannot start scan.")
-                  result?.error("BLE_ERROR", "BLE Scanner not available.", null)
-                  return
-              }
-         }
+        if (bluetoothLeScanner == null) {
+            bluetoothLeScanner = bluetoothAdapter?.bluetoothLeScanner // Try again
+            if (bluetoothLeScanner == null) {
+                Log.e(TAG, "BLE Scanner is null, cannot start scan.")
+                result?.error("BLE_ERROR", "BLE Scanner not available.", null)
+                return
+            }
+        }
 
         // Scan specifically for our service UUID
         val scanFilters = listOf(
@@ -259,7 +260,7 @@ class BleManager(
     }
 
     fun connectBleDevice(result: Result, deviceAddress: String) {
-    Log.d(TAG, "Attempting to connect to BLE device: $deviceAddress")
+        Log.d(TAG, "Attempting to connect to BLE device: $deviceAddress")
         if (!serviceManager.isBluetoothEnabled()) {
             result.error("BLUETOOTH_DISABLED", "Bluetooth is not enabled.", null)
             return
@@ -286,8 +287,8 @@ class BleManager(
             result.error("CONNECTION_FAILED", "Failed to initiate GATT connection.", null)
         } else {
             Log.d(TAG, "GATT connection initiated to $deviceAddress...")
+            result.success(true)
             // Result (success/failure) handled asynchronously by gattClientCallback
-            // Don't call result.success() here yet.
         }
     }
 
@@ -429,21 +430,21 @@ class BleManager(
     }
 
     private fun sendConnectionStateUpdate(device: BluetoothDevice, isConnected: Boolean) {
-    mainHandler.post {
-        val stateMap = mapOf(
-            "deviceId" to device.address,
-            "deviceName" to (device.name ?: "Unknown"),
-            "isConnected" to isConnected
-        )
-        connectionStateSink?.success(stateMap)
-        Log.d(TAG, "Sent connection state update: ${device.address} -> $isConnected")
+        mainHandler.post {
+            val stateMap = mapOf(
+                "deviceAddress" to device.address,
+                "deviceName" to (device.name ?: "Unknown"),
+                "isConnected" to isConnected
+            )
+            connectionStateSink?.success(stateMap)
+            Log.d(TAG, "Sent connection state update: ${device.address} -> $isConnected")
+        }
     }
-}
 
     private fun sendScanResultUpdate(device: BluetoothDevice, rssi: Int) {
         mainHandler.post {
         val resultMap = mapOf(
-            "deviceId" to device.address,
+            "deviceAddress" to device.address,
             "deviceName" to (device.name ?: "Unknown"),
             "rssi" to rssi,
             // "serviceUuids" to result.scanRecord?.serviceUuids?.map { it.toString() } // Optional: include discovered UUIDs
@@ -456,7 +457,7 @@ class BleManager(
     private fun sendReceivedDataUpdate(device: BluetoothDevice, characteristicUuid: UUID, data: ByteArray) {
         mainHandler.post {
             val dataMap = mapOf(
-                "deviceId" to device.address,
+                "deviceAddress" to device.address,
                 "characteristicUuid" to characteristicUuid.toString(),
                 "data" to data // Send as byte array (Uint8List in Flutter)
             )
@@ -502,6 +503,8 @@ class BleManager(
                     if (foundDevices.add(device.address)) { // Only report each device once per scan start
                          Log.d(TAG,"BLE Device Found: ${device.address} (${device.name ?: "Unknown"}) RSSI: ${result.rssi}")
                          sendScanResultUpdate(device, result.rssi)
+                    } else {
+                        // Keep from throwing error                  
                     }
                  } else {
                       Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to process scan result on Android 12+")
@@ -511,7 +514,7 @@ class BleManager(
 
         override fun onBatchScanResults(results: MutableList<ScanResult>?) {
             super.onBatchScanResults(results)
-             results?.forEach { result ->
+            results?.forEach { result ->
                  result.device?.let { device ->
                     if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                         if (foundDevices.add(device.address)) {

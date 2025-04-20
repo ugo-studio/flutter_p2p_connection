@@ -219,14 +219,14 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                 // --- Client Connection Methods ---
                 "connectToHotspot" -> {
                     val ssid: String? = call.argument("ssid")
-                    val password: String? = call.argument("password")
-                    if (ssid.isNullOrEmpty() || password == null) {
-                        result.error("INVALID_ARGS", "Missing or invalid 'ssid' or 'password' arguments", null)
+                    val psk: String? = call.argument("psk")
+                    if (ssid.isNullOrEmpty() || psk == null) {
+                        result.error("INVALID_ARGS", "Missing or invalid 'ssid' or 'psk' arguments", null)
                     } else if (!permissionsManager.hasP2pPermissions()) {
                          result.error("PERMISSION_DENIED", "Missing required P2P permissions.", null)
                     }
                      else {
-                        clientManager.connectToHotspot(result, ssid, password)
+                        clientManager.connectToHotspot(result, ssid, psk)
                     }
                 }
                 "disconnectFromHotspot" -> clientManager.disconnectFromHotspot(result)
@@ -255,19 +255,19 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
                 "ble#startScan" -> bleManager.startBleScan(result)
                 "ble#stopScan" -> bleManager.stopBleScan(result)
                 "ble#connect" -> {
-                     val deviceId: String? = call.argument("deviceId")
-                     if (deviceId == null) {
-                          result.error("INVALID_ARGS", "Missing 'deviceId' argument for ble#connect", null)
+                     val deviceAddress: String? = call.argument("deviceAddress")
+                     if (deviceAddress == null) {
+                          result.error("INVALID_ARGS", "Missing 'deviceAddress' argument for ble#connect", null)
                      } else {
-                          bleManager.connectBleDevice(result, deviceId)
+                          bleManager.connectBleDevice(result, deviceAddress)
                      }
                  }
                  "ble#disconnect" -> {
-                      val deviceId: String? = call.argument("deviceId")
-                     if (deviceId == null) {
-                          result.error("INVALID_ARGS", "Missing 'deviceId' argument for ble#disconnect", null)
+                      val deviceAddress: String? = call.argument("deviceAddress")
+                     if (deviceAddress == null) {
+                          result.error("INVALID_ARGS", "Missing 'deviceAddress' argument for ble#disconnect", null)
                      } else {
-                         bleManager.disconnectBleDevice(result, deviceId)
+                         bleManager.disconnectBleDevice(result, deviceAddress)
                      }
                  }
                 // Add methods for writing characteristics if needed

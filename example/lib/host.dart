@@ -50,7 +50,9 @@ class _HostPageState extends State<HostPage> {
   void askRequiredPermission() async {
     var storageGranted = await p2p.askStoragePermission();
     var p2pGranted = await p2p.askP2pPermissions();
-    snack("Storage permission: $storageGranted\n\nP2p permission: $p2pGranted");
+    var bleGranted = await p2p.askBluetoothPermissions();
+    snack(
+        "Storage permission: $storageGranted\n\nP2p permission: $p2pGranted\n\nBluetooth permission: $bleGranted");
   }
 
   void enableWifi() async {
@@ -61,6 +63,11 @@ class _HostPageState extends State<HostPage> {
   void enableLocation() async {
     var locationEnabled = await p2p.enableLocationServices();
     snack("enabling location: $locationEnabled");
+  }
+
+  void enableBluetooth() async {
+    var bluetoothEnabled = await p2p.enableBluetoothServices();
+    snack("enabling bluetooth: $bluetoothEnabled");
   }
 
   void createGroup() async {
@@ -81,6 +88,36 @@ class _HostPageState extends State<HostPage> {
       snack("failed to remove group: $e");
     }
     setState(() {});
+  }
+
+  void shareHotspotWithQrcode() async {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => QrImagePage(
+          hotspotState: hotspotState,
+        ),
+      ),
+    );
+  }
+
+  void shareHotspotWithBluetooth() async {
+    // var ssid = hotspotState?.ssid;
+    // var psk = hotspotState?.preSharedKey;
+    // if (ssid == null || psk == null) {
+    //   snack("ssid or psk is null");
+    // } else {
+    //   await p2p.bluetooth.startAdvertising(ssid, psk);
+    //   snack("advertising started");
+    // }
+    if (p2p.bluetooth.isAdvertising) {
+      await p2p.bluetooth.stopAdvertising();
+      snack("advertisement stopped");
+      return;
+    }
+
+    await p2p.bluetooth.startAdvertising('hello', 'world');
+    snack("advertisement started");
   }
 
   @override
@@ -111,6 +148,10 @@ class _HostPageState extends State<HostPage> {
                 onPressed: enableLocation,
                 child: const Text("enable location"),
               ),
+              ElevatedButton(
+                onPressed: enableBluetooth,
+                child: const Text("enable bluetooth"),
+              ),
               const SizedBox(height: 30),
 
               // hotspot services
@@ -131,20 +172,18 @@ class _HostPageState extends State<HostPage> {
                     ),
               const SizedBox(height: 30),
 
-              // show qrcode image
+              // hotspot creds share methods
               ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => QrImagePage(
-                        hotspotState: hotspotState,
-                      ),
-                    ),
-                  );
-                },
+                onPressed: shareHotspotWithQrcode,
                 child: const Text(
-                  "show hotspot info qrcode",
+                  "share hotspot creds via qrcode",
+                  style: TextStyle(color: Colors.black),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: shareHotspotWithBluetooth,
+                child: const Text(
+                  "share hotspot creds via bluetooth",
                   style: TextStyle(color: Colors.blue),
                 ),
               ),
