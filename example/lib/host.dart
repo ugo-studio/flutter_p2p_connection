@@ -13,19 +13,29 @@ class HostPage extends StatefulWidget {
 
 class _HostPageState extends State<HostPage> {
   late FlutterP2pConnection p2p;
+  late StreamSubscription<HotspotHostState> hotspotStateSubscription;
 
   HotspotHostState? hotspotState;
 
   @override
   void initState() {
     super.initState();
+
     p2p = FlutterP2pConnection();
-    p2p.host.initialize();
+    p2p.host.initialize().whenComplete(() {
+      hotspotStateSubscription =
+          p2p.host.onHotspotStateChanged().listen((state) {
+        setState(() {
+          hotspotState = state;
+        });
+      });
+    });
   }
 
   @override
   void dispose() {
     p2p.host.dispose();
+    hotspotStateSubscription.cancel();
     super.dispose();
   }
 
@@ -65,7 +75,7 @@ class _HostPageState extends State<HostPage> {
 
   void createGroup() async {
     try {
-      hotspotState = await p2p.host.createGroup();
+      await p2p.host.createGroup();
       snack("created group");
     } catch (e) {
       snack("failed to create group: $e");

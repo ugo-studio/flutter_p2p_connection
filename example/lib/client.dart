@@ -15,22 +15,20 @@ class _ClientPageState extends State<ClientPage> {
   late FlutterP2pConnection p2p;
   late StreamSubscription<HotspotClientState> hotspotStateSubscription;
 
-  HotspotClientState? hotspotInfo;
-
+  HotspotClientState? hotspotState;
   List<BleFoundDevice> foundDevices = [];
-  int? connectedDeviceIndex;
 
   @override
   void initState() {
     super.initState();
+
     p2p = FlutterP2pConnection();
-
-    p2p.client.initialize();
-
-    hotspotStateSubscription =
-        p2p.client.onHotspotStateChanged().listen((info) {
-      setState(() {
-        hotspotInfo = info;
+    p2p.client.initialize().whenComplete(() {
+      hotspotStateSubscription =
+          p2p.client.onHotspotStateChanged().listen((state) {
+        setState(() {
+          hotspotState = state;
+        });
       });
     });
   }
@@ -99,11 +97,10 @@ class _ClientPageState extends State<ClientPage> {
     snack("disconnected");
   }
 
-  void startBluetoothPeerDiscovery() async {
+  void startPeerDiscovery() async {
     await p2p.client.startScan((devices) {
       setState(() {
         foundDevices = devices;
-        connectedDeviceIndex = null;
       });
     });
     snack('started peer discovery');
@@ -111,29 +108,12 @@ class _ClientPageState extends State<ClientPage> {
 
   void connectToBleDevice(int index) async {
     var device = foundDevices[index];
-    setState(() {
-      connectedDeviceIndex = index;
-    });
-    await p2p.bluetooth.connectDevice(
-      device.deviceAddress,
-      onData: (evt) async {
-        print(evt.deviceAddress);
-        print(evt.data);
-
-        String dataString = String.fromCharCodes(evt.data);
-        print(dataString);
-      },
-    );
+    await p2p.client.connectToFoundDevice(device.deviceAddress);
     snack('connected to ${device.deviceAddress}');
-  }
 
-  void disconnectFromBleDevice(int index) async {
-    var device = foundDevices[index];
     setState(() {
-      connectedDeviceIndex = null;
+      foundDevices = [];
     });
-    await p2p.bluetooth.disconnectDevice(device.deviceAddress);
-    snack('disconnected from ${device.deviceAddress}');
   }
 
   @override
@@ -178,8 +158,9 @@ class _ClientPageState extends State<ClientPage> {
                   style: TextStyle(color: Colors.black),
                 ),
               ),
+              const Text('OR'),
               ElevatedButton(
-                onPressed: startBluetoothPeerDiscovery,
+                onPressed: startPeerDiscovery,
                 child: const Text(
                   "start bluetooth peer discovery",
                   style: TextStyle(color: Colors.blue),
@@ -188,7 +169,7 @@ class _ClientPageState extends State<ClientPage> {
               const SizedBox(height: 30),
 
               // hotspot disconect
-              hotspotInfo?.isActive == true
+              hotspotState?.isActive == true
                   ? ElevatedButton(
                       onPressed: disconnect,
                       child: const Text(
@@ -209,18 +190,8 @@ class _ClientPageState extends State<ClientPage> {
                     title: Text(foundDevices[index].deviceName),
                     subtitle: Text(foundDevices[index].deviceAddress),
                     trailing: ElevatedButton(
-                      onPressed: () {
-                        if (connectedDeviceIndex == index) {
-                          disconnectFromBleDevice(index);
-                        } else {
-                          connectToBleDevice(index);
-                        }
-                      },
-                      child: Text(
-                        connectedDeviceIndex == index
-                            ? "disconnect"
-                            : "connect",
-                      ),
+                      onPressed: () => connectToBleDevice(index),
+                      child: const Text("connect"),
                     ),
                   ),
                 ),
