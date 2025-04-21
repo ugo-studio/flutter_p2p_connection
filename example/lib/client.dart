@@ -86,6 +86,7 @@ class _ClientPageState extends State<ClientPage> {
             } catch (e) {
               snack("failed to connect: $e");
             }
+            setState(() {});
           },
         ),
       ),

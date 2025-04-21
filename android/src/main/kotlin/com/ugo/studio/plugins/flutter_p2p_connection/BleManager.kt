@@ -507,7 +507,7 @@ class BleManager(
                     // Add or update the device in the map
                     val updated = discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap
                     if(updated) {
-                        Log.d(TAG,"BLE Device Found/Updated: $deviceAddress ($deviceName) RSSI: $rssi")
+                        Log.d(TAG,"BLE Device Found/Updated: $deviceAddress ($deviceName)")
                         // Send the updated list to Flutter
                         sendScanResultListUpdate()
                     } else {
