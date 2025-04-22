@@ -228,7 +228,10 @@ class P2pTransportHost {
           // Assume data is a JSON string representing SocketMessage
           final message = SocketMessage.fromJsonString(data as String);
           // Add the received message to the public stream.
-          _receivedMessagesController.add(message);
+          if (message.type == SocketMessagetype.chat ||
+              message.type == SocketMessagetype.fileInfo) {
+            _receivedMessagesController.add(message);
+          }
           debugPrint(
               "P2P Transport Host: Received from $clientId: ${message.type}");
         } catch (e) {
@@ -366,9 +369,18 @@ class P2pTransportClient {
   final StreamController<SocketMessage> _receivedMessagesController =
       StreamController<SocketMessage>.broadcast();
 
+  /// Stream controller for broadcasting client connection/disconnection events.
+  /// Emits the current list of client IDs.
+  final StreamController<List<String>> _clientListController =
+      StreamController<List<String>>.broadcast();
+
   /// Public stream of messages received from the server.
   Stream<SocketMessage> get receivedMessages =>
       _receivedMessagesController.stream;
+
+  /// Public stream emitting the updated list of connected client IDs whenever a
+  /// client connects or disconnects.
+  Stream<List<String>> get clientListStream => _clientListController.stream;
 
   /// Returns `true` if the client is currently connected to the server.
   bool get isConnected => _isConnected && _socket?.readyState == WebSocket.open;
@@ -439,7 +451,12 @@ class P2pTransportClient {
           // Assume data is a JSON string representing SocketMessage
           final message = SocketMessage.fromJsonString(data as String);
           // Add the received message to the public stream.
-          _receivedMessagesController.add(message);
+          if (message.type == SocketMessagetype.clientList) {
+            _clientListController.add(message.payload as List<String>);
+          } else if (message.type == SocketMessagetype.chat ||
+              message.type == SocketMessagetype.fileInfo) {
+            _receivedMessagesController.add(message);
+          }
           debugPrint(
               "P2P Transport Client: Received from server: ${message.type}");
         } catch (e) {

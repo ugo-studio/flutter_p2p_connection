@@ -13,7 +13,9 @@ class ClientPage extends StatefulWidget {
 
 class _ClientPageState extends State<ClientPage> {
   late FlutterP2pConnection p2p;
-  late StreamSubscription<HotspotClientState> hotspotStateSubscription;
+
+  StreamSubscription<HotspotClientState>? hotspotStateSubscription;
+  StreamSubscription<List<String>>? clientListStream;
 
   HotspotClientState? hotspotState;
   List<BleFoundDevice> foundDevices = [];
@@ -36,7 +38,8 @@ class _ClientPageState extends State<ClientPage> {
   @override
   void dispose() {
     p2p.client.dispose();
-    hotspotStateSubscription.cancel();
+    hotspotStateSubscription?.cancel();
+    clientListStream?.cancel();
     super.dispose();
   }
 

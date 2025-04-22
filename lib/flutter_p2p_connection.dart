@@ -207,7 +207,7 @@ class FlutterP2pConnectionHost {
   /// Returns an empty stream if the P2P transport is not active or has not been initialized.
   Stream<SocketMessage> streamReceivedData() {
     // Return the transport's stream or an empty stream if transport is null.
-    return _p2pTransport?.receivedMessages ?? Stream.empty();
+    return _p2pTransport?.receivedMessages ?? const Stream.empty();
   }
 
   /// Provides a stream that emits the updated list of connected client IDs
@@ -215,7 +215,7 @@ class FlutterP2pConnectionHost {
   ///
   /// Returns an empty stream if the P2P transport is not active.
   Stream<List<String>> streamClientList() {
-    return _p2pTransport?.clientListStream ?? Stream.empty();
+    return _p2pTransport?.clientListStream ?? const Stream.empty();
   }
 
   /// Broadcasts a [SocketMessage] to all connected clients.
@@ -651,6 +651,14 @@ class FlutterP2pConnectionClient {
   Stream<SocketMessage> streamReceivedData() {
     // Return the transport's stream or an empty stream if transport is null.
     return _p2pTransport?.receivedMessages ?? const Stream.empty();
+  }
+
+  /// Provides a stream that emits the updated list of connected client IDs
+  /// whenever a client connects or disconnects.
+  ///
+  /// Returns an empty stream if the P2P transport is not active.
+  Stream<List<String>> streamClientList() {
+    return _p2pTransport?.clientListStream ?? const Stream.empty();
   }
 
   /// Sends a message to the connected host via the P2P transport layer.
