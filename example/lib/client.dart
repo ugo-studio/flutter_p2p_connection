@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
+import 'package:flutter_p2p_connection/p2p_transport.dart';
 import 'package:flutter_p2p_connection_example/qr/scanner_page.dart';
 
 class ClientPage extends StatefulWidget {
@@ -15,10 +16,11 @@ class _ClientPageState extends State<ClientPage> {
   late FlutterP2pConnection p2p;
 
   StreamSubscription<HotspotClientState>? hotspotStateSubscription;
-  StreamSubscription<List<String>>? clientListStream;
+  StreamSubscription<List<P2pClientInfo>>? clientListStream;
 
   HotspotClientState? hotspotState;
-  List<BleFoundDevice> foundDevices = [];
+  List<BleDiscoveredDevice> discoveredDevices = [];
+  List<P2pClientInfo> clientList = [];
 
   @override
   void initState() {
@@ -77,47 +79,48 @@ class _ClientPageState extends State<ClientPage> {
     snack("enabling bluetooth: $bluetoothEnabled");
   }
 
-  void scanQrcodeAndConnect() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ScannerPage(
-          onScanned: (ssid, preSharedKey) async {
-            try {
-              await p2p.client.connectToHotspot(ssid, preSharedKey);
-              snack("connected");
-            } catch (e) {
-              snack("failed to connect: $e");
-            }
-            setState(() {});
-          },
-        ),
-      ),
-    );
-  }
-
-  void disconnect() async {
-    await p2p.client.disconnectFromHotspot();
-    snack("disconnected");
-  }
-
   void startPeerDiscovery() async {
     await p2p.client.startScan((devices) {
       setState(() {
-        foundDevices = devices;
+        discoveredDevices = devices;
       });
     });
     snack('started peer discovery');
   }
 
-  void connectToBleDevice(int index) async {
-    var device = foundDevices[index];
-    await p2p.client.connectToFoundDevice(device.deviceAddress);
+  void connectWithDevice(int index) async {
+    var device = discoveredDevices[index];
+    await p2p.client.connectWithDevice(device);
+    clientListStream = p2p.client.streamClientList().listen((list) {
+      setState(() {
+        clientList = list;
+      });
+    });
     snack('connected to ${device.deviceAddress}');
 
     setState(() {
-      foundDevices = [];
+      discoveredDevices.clear();
     });
+  }
+
+  void connectWithCredentials(ssid, preSharedKey) async {
+    try {
+      await p2p.client.connectWithCredentials(ssid, preSharedKey);
+      clientListStream = p2p.client.streamClientList().listen((list) {
+        setState(() {
+          clientList = list;
+        });
+      });
+      snack("connected");
+    } catch (e) {
+      snack("failed to connect: $e");
+    }
+  }
+
+  void disconnect() async {
+    clientListStream?.cancel();
+    await p2p.client.disconnect();
+    snack("disconnected");
   }
 
   @override
@@ -156,18 +159,27 @@ class _ClientPageState extends State<ClientPage> {
 
               // hotspot creds share methods
               ElevatedButton(
-                onPressed: scanQrcodeAndConnect,
-                child: const Text(
-                  "scan qrcode and connect",
-                  style: TextStyle(color: Colors.black),
-                ),
-              ),
-              const Text('OR'),
-              ElevatedButton(
                 onPressed: startPeerDiscovery,
                 child: const Text(
                   "start bluetooth peer discovery",
                   style: TextStyle(color: Colors.blue),
+                ),
+              ),
+              const Text('OR'),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ScannerPage(
+                        onScanned: connectWithCredentials,
+                      ),
+                    ),
+                  );
+                },
+                child: const Text(
+                  "scan qrcode and connect",
+                  style: TextStyle(color: Colors.black),
                 ),
               ),
               const SizedBox(height: 30),
@@ -185,18 +197,45 @@ class _ClientPageState extends State<ClientPage> {
               const SizedBox(height: 30),
 
               // display scan result
+              discoveredDevices.isNotEmpty
+                  ? Center(
+                      child: Column(
+                        children: [
+                          const Text("Discovered devices:"),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 200,
+                            child: ListView.builder(
+                              itemCount: discoveredDevices.length,
+                              itemBuilder: (context, index) => ListTile(
+                                title:
+                                    Text(discoveredDevices[index].deviceName),
+                                subtitle: Text(
+                                    discoveredDevices[index].deviceAddress),
+                                trailing: ElevatedButton(
+                                  onPressed: () => connectWithDevice(index),
+                                  child: const Text("connect"),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 30),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+
+              // display client list
+              Text(
+                  "Connected devices (${clientList.isEmpty ? 'empty' : clientList.length}):"),
               SizedBox(
                 width: double.infinity,
                 height: 200,
                 child: ListView.builder(
-                  itemCount: foundDevices.length,
+                  itemCount: clientList.length,
                   itemBuilder: (context, index) => ListTile(
-                    title: Text(foundDevices[index].deviceName),
-                    subtitle: Text(foundDevices[index].deviceAddress),
-                    trailing: ElevatedButton(
-                      onPressed: () => connectToBleDevice(index),
-                      child: const Text("connect"),
-                    ),
+                    title: Text(clientList[index].username),
+                    subtitle: Text('isHost: ${clientList[index].isHost}'),
                   ),
                 ),
               ),

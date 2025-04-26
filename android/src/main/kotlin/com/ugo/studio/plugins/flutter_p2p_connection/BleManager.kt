@@ -124,7 +124,7 @@ class BleManager(
              result?.error("BLUETOOTH_DISABLED", "Bluetooth is not enabled.", null)
              return
          }
-        if (!hasPermission(Manifest.permission.BLUETOOTH_ADVERTISE)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_ADVERTISE)) { // Check Android version first
             Log.w(TAG, "Missing BLUETOOTH_ADVERTISE permission")
             result?.error("PERMISSION_DENIED", "Missing Bluetooth Advertise permission.", null)
             return
@@ -152,10 +152,16 @@ class BleManager(
                     .setConnectable(true) // Important: Make it connectable
                     .build()
 
+                // Data for the main advertisement packet
                 val data = AdvertiseData.Builder()
                     .setIncludeDeviceName(false) // Usually better not to include name for privacy/size
                     .addServiceUuid(ParcelUuid(serviceUuid)) // Advertise our custom service
                     .build()
+
+                // // Data for the scan response packet (include the name here)
+                // val scanResponseData = AdvertiseData.Builder()
+                //     .setIncludeDeviceName(true) // Include default name in scan response
+                //     .build()
 
                 bluetoothLeAdvertiser?.startAdvertising(settings, data, advertiseCallback)
                 Log.d(TAG, "BLE Advertising start requested.")
@@ -175,15 +181,15 @@ class BleManager(
             result?.success(true) // Indicate it's stopped
             return
         }
-        if (!hasPermission(Manifest.permission.BLUETOOTH_ADVERTISE)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_ADVERTISE)) { // Check Android version first
             Log.w(TAG, "Missing BLUETOOTH_ADVERTISE permission to stop")
             // Continue attempt anyway
         }
-         if (bluetoothLeAdvertiser == null) {
-             Log.e(TAG, "BLE Advertiser is null, cannot stop advertising (already stopped?).")
-             result?.success(true)
-             return
-         }
+        if (bluetoothLeAdvertiser == null) {
+            Log.e(TAG, "BLE Advertiser is null, cannot stop advertising (already stopped?).")
+            result?.success(true)
+            return
+        }
 
         bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
         isAdvertising = false // Assume stop will succeed, callback confirms
@@ -199,7 +205,7 @@ class BleManager(
              result?.error("BLUETOOTH_DISABLED", "Bluetooth is not enabled.", null)
              return
          }
-        if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_SCAN)) { // Check Android version first
             Log.w(TAG, "Missing BLUETOOTH_SCAN permission")
             result?.error("PERMISSION_DENIED", "Missing Bluetooth Scan permission.", null)
             return
@@ -247,7 +253,7 @@ class BleManager(
             result?.success(true) // Indicate it's stopped
             return
         }
-        if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_SCAN)) { // Check Android version first
             Log.w(TAG, "Missing BLUETOOTH_SCAN permission to stop")
             // Continue attempt anyway
         }
@@ -269,7 +275,7 @@ class BleManager(
             result.error("BLUETOOTH_DISABLED", "Bluetooth is not enabled.", null)
             return
         }
-        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { // Check Android version first
             result.error("PERMISSION_DENIED", "Missing Bluetooth Connect permission.", null)
             return
         }
@@ -298,7 +304,7 @@ class BleManager(
 
     fun disconnectBleDevice(result: Result, deviceAddress: String) {
         Log.d(TAG, "Attempting to disconnect from BLE device: $deviceAddress")
-        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { // Check Android version first
             result.error("PERMISSION_DENIED", "Missing Bluetooth Connect permission.", null)
             return
         }
@@ -323,7 +329,7 @@ class BleManager(
     }
 
     private fun setupGattServer(ssid: String, psk: String, callback: (Boolean) -> Unit) {
-        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { // Check Android version first
             Log.e(TAG, "Missing BLUETOOTH_CONNECT permission for GATT server.")
             callback(false)
             return
@@ -351,7 +357,8 @@ class BleManager(
         val ssidCharacteristic = BluetoothGattCharacteristic(
             ssidCharacteristicUuid,
             BluetoothGattCharacteristic.PROPERTY_READ, // Client can read
-            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED_MITM // Require bonding/encryption
+            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED // Require bonding/encryption
+            // BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED_MITM // Require bonding/encryption
         )
         ssidCharacteristic.value = ssid.toByteArray(Charsets.UTF_8) // Set initial value
 
@@ -359,7 +366,8 @@ class BleManager(
         val pskCharacteristic = BluetoothGattCharacteristic(
             pskCharacteristicUuid,
             BluetoothGattCharacteristic.PROPERTY_READ, // Client can read
-            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED_MITM // Require bonding/encryption
+            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED // Require bonding/encryption
+            // BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED_MITM // Require bonding/encryption
         )
         pskCharacteristic.value = psk.toByteArray(Charsets.UTF_8) // Set initial value
 
@@ -381,7 +389,7 @@ class BleManager(
     }
 
     private fun closeGattServer() {
-        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { // Check Android version first
             Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to close GATT server.")
             // Attempt closing anyway
         }
@@ -398,7 +406,7 @@ class BleManager(
     }
 
     private fun disconnectAllClients() {
-        if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { // Check Android version first
             Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to disconnect clients.")
             return
         }
@@ -418,16 +426,21 @@ class BleManager(
 
     private fun sendConnectionStateUpdate(device: BluetoothDevice, isConnected: Boolean) {
         mainHandler.post {
+            // Get name safely: Check permission only on S+
+            val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+            val deviceName = if (canAccessName) device.name ?: "unknown" else "Protected"
+            // Address access does not require BLUETOOTH_CONNECT
+            val deviceAddress = device.address
+
             val stateMap = mapOf(
-                "deviceAddress" to device.address,
-                // Check permission before accessing name on S+
-                "deviceName" to if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) (device.name ?: "Unknown") else "Unknown",
+                "deviceAddress" to deviceAddress, // Use safe address
+                "deviceName" to deviceName, // Use safe name
                 "isConnected" to isConnected
             )
             try {
                 connectionStateSink?.success(stateMap)
-                Log.d(TAG, "Sent connection state update: ${device.address} -> $isConnected")
-            } catch (e: Exception) {
+                Log.d(TAG, "Sent connection state update: ${deviceAddress} -> $isConnected")
+            } catch (e: Exception) { // Catch potential errors during sink operation
                  Log.e(TAG, "Error sending connection state update: ${e.message}", e)
             }
         }
@@ -440,7 +453,7 @@ class BleManager(
             try {
                 scanResultSink?.success(resultsList)
                 Log.d(TAG, "Sent scan result list update. Count: ${resultsList.size}")
-            } catch (e: Exception) {
+            } catch (e: Exception) { // Catch potential errors during sink operation
                  Log.e(TAG, "Error sending scan result list update: ${e.message}", e)
             }
         }
@@ -456,7 +469,7 @@ class BleManager(
              try {
                 receivedDataSink?.success(dataMap)
                 Log.d(TAG, "Sent received data update: ${device.address} / $characteristicUuid")
-            } catch (e: Exception) {
+            } catch (e: Exception) { // Catch potential errors during sink operation
                  Log.e(TAG, "Error sending received data update: ${e.message}", e)
             }
         }
@@ -493,9 +506,11 @@ class BleManager(
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             super.onScanResult(callbackType, result)
             result?.device?.let { device ->
-                 if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { // Needed for name/address access on S+
+                 // Check permission only needed for name on S+
+                 val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                 if (canAccessName) { // Address is accessible without CONNECT
                     val deviceAddress = device.address
-                    val deviceName = device.name ?: "Unknown"
+                    val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
                     val rssi = result.rssi
 
                     val resultMap = mapOf(
@@ -515,7 +530,7 @@ class BleManager(
                     }
 
                  } else {
-                      Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to process scan result on Android 12+")
+                      Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to get name for scan result on Android 12+")
                  }
             }
         }
@@ -525,9 +540,11 @@ class BleManager(
             var listChanged = false
              results?.forEach { result ->
                  result.device?.let { device ->
-                    if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                    // Check permission only needed for name on S+
+                    val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                    if (canAccessName) { // Address is accessible without CONNECT
                         val deviceAddress = device.address
-                        val deviceName = device.name ?: "Unknown"
+                        val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
                         val rssi = result.rssi
 
                          val resultMap = mapOf(
@@ -541,7 +558,7 @@ class BleManager(
                              Log.d(TAG,"BLE Device Found/Updated (Batch): $deviceAddress ($deviceName) RSSI: $rssi")
                          }
                     } else {
-                        Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to process batch scan result on Android 12+")
+                        Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to get name for batch scan result on Android 12+")
                     }
                 }
             }
@@ -573,8 +590,10 @@ class BleManager(
             super.onConnectionStateChange(device, status, newState)
              if (device == null) return
 
-             val deviceAddress = device.address
-             val deviceName = if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) device.name ?: "Unknown" else "Protected"
+             // Check permission only on S+ for name access
+             val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+             val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
+             val deviceAddress = device.address // Address is safe
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 when (newState) {
@@ -584,8 +603,8 @@ class BleManager(
                         sendConnectionStateUpdate(device, true)
                         if(device.bondState == BluetoothDevice.BOND_NONE) {
                             Log.d(TAG, "Requesting bond with $deviceAddress")
-                            // Check permission before createBond
-                            if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                            // Check permission before createBond (needed on S+)
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                                 device.createBond()
                             } else {
                                 Log.e(TAG, "Missing BLUETOOTH_CONNECT permission to create bond.")
@@ -615,7 +634,8 @@ class BleManager(
              val deviceAddress = device.address
              val charUuid = characteristic.uuid
 
-             Log.d(TAG,"GATT Server: Read request for Characteristic $charUuid from $deviceAddress (Offset: $offset)")
+             Log.d(TAG, "GATT Server: Read request for Characteristic $charUuid from $deviceAddress (Offset: $offset)")
+
 
               if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                   Log.e(TAG, "Missing BLUETOOTH_CONNECT permission for GATT server read response.")
@@ -651,7 +671,7 @@ class BleManager(
              super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value)
              Log.w(TAG, "GATT Server: Received unexpected write request for ${characteristic?.uuid} from ${device?.address}. Denying.")
              if (responseNeeded && device != null && gattServer != null) {
-                if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) { // Check permission on S+
                      gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_WRITE_NOT_PERMITTED, offset, null)
                 }
              }
@@ -672,8 +692,10 @@ class BleManager(
     private val gattClientCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
             val device = gatt?.device ?: return
-            val deviceAddress = device.address
-            val deviceName = if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) device.name ?: "Unknown" else "Protected"
+            // Check permission only on S+ for name access
+            val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+            val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
+            val deviceAddress = device.address // Address is safe
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 when (newState) {
@@ -681,7 +703,8 @@ class BleManager(
                         Log.i(TAG, "GATT Client: Connected to $deviceName ($deviceAddress)")
                         clientGatt = gatt // Store the connected gatt instance
                         sendConnectionStateUpdate(device, true)
-                        if (hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+                        // Check permission before discovering services (needed on S+)
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                             Log.d(TAG, "GATT Client: Discovering services for $deviceAddress...")
                             if (!gatt.discoverServices()) {
                                 Log.e(TAG,"GATT Client: Failed to initiate service discovery for $deviceAddress")

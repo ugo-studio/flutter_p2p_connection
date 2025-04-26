@@ -151,7 +151,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
     // --- MethodCallHandler Implementation ---
     override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
-        Log.d(TAG, "Method call received: ${call.method}")
+        // Log.d(TAG, "Method call received: ${call.method}")
 
         when (call.method) {
             "getPlatformVersion" -> { result.success("${Build.VERSION.RELEASE}"); return }

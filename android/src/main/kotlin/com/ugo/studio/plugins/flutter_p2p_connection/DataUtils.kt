@@ -132,7 +132,7 @@ object DataUtils {
 
                         // Common hotspot IPs (192.168.43.1 for tethering, 192.168.49.1 for LOHS)
                         if (ip == "192.168.43.1" || ip == "192.168.49.1") {
-                             Log.d(TAG, "Found common hotspot IP: $ip on interface ${intf.name}")
+                            Log.d(TAG, "Found common hotspot IP: $ip on interface ${intf.name}")
                             return ip // Return immediately if common IP found
                         }
 

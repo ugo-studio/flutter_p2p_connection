@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
+import 'package:flutter_p2p_connection/p2p_transport.dart';
 import 'package:flutter_p2p_connection_example/qr/qr_image_page.dart';
 
 class HostPage extends StatefulWidget {
@@ -15,9 +16,10 @@ class _HostPageState extends State<HostPage> {
   late FlutterP2pConnection p2p;
 
   StreamSubscription<HotspotHostState>? hotspotStateSubscription;
-  StreamSubscription<List<String>>? clientListStream;
+  StreamSubscription<List<P2pClientInfo>>? clientListStream;
 
   HotspotHostState? hotspotState;
+  List<P2pClientInfo> clientList = [];
 
   @override
   void initState() {
@@ -78,6 +80,11 @@ class _HostPageState extends State<HostPage> {
   void createGroup() async {
     try {
       await p2p.host.createGroup();
+      clientListStream = p2p.host.streamClientList().listen((list) {
+        setState(() {
+          clientList = list;
+        });
+      });
       snack("created group");
     } catch (e) {
       snack("failed to create group: $e");
@@ -87,6 +94,7 @@ class _HostPageState extends State<HostPage> {
 
   void removeGroup() async {
     try {
+      clientListStream?.cancel();
       await p2p.host.removeGroup();
       snack("removed group");
     } catch (e) {
@@ -168,6 +176,22 @@ class _HostPageState extends State<HostPage> {
                       ),
                     )
                   : const SizedBox.shrink(),
+              const SizedBox(height: 30),
+
+              // display client list
+              Text(
+                  "Connected devices (${clientList.isEmpty ? 'empty' : clientList.length}):"),
+              SizedBox(
+                width: double.infinity,
+                height: 200,
+                child: ListView.builder(
+                  itemCount: clientList.length,
+                  itemBuilder: (context, index) => ListTile(
+                    title: Text(clientList[index].username),
+                    subtitle: Text('isHost: ${clientList[index].isHost}'),
+                  ),
+                ),
+              ),
               const SizedBox(height: 30),
             ],
           ),

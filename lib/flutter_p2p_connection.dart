@@ -7,7 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'flutter_p2p_connection_platform_interface.dart';
 
 // Default port for the custom P2P transport layer if not specified otherwise.
-const int _defaultP2pTransportPort = 8080;
+const int _defaultP2pTransportPort = 3434;
 
 /// The [FlutterP2pConnectionHost] class facilitates creating and managing a
 /// Wi-Fi Direct group (acting as a hotspot host) for P2P connections.
@@ -69,7 +69,7 @@ class FlutterP2pConnectionHost {
   /// connection details (SSID, PSK, IP address).
   Future<HotspotHostState> createGroup({
     bool advertise = true,
-    Duration timeout = const Duration(seconds: 15), // Increased timeout
+    Duration timeout = const Duration(seconds: 60), // Increased timeout
   }) async {
     // Stop any existing transport first
     await _p2pTransport?.stop().catchError((e) {
@@ -82,24 +82,21 @@ class FlutterP2pConnectionHost {
     _isGroupCreated = true;
     debugPrint("Host: Native hotspot creation initiated.");
 
-    // Wait for the hotspot state update containing valid credentials and IP.
+    // Wait for the hotspot state update containing valid credentials.
     HotspotHostState state;
     try {
-      debugPrint("Host: Waiting for active state with IP...");
+      debugPrint("Host: Waiting for active state...");
       state = await streamHotspotState()
-          .firstWhere(
-        (s) =>
-            s.isActive && // Ensure group is active
-            s.ssid != null &&
-            s.preSharedKey != null &&
-            s.hostIpAddress != null, // Crucially, wait for IP
-      )
+          .firstWhere((s) =>
+              s.isActive && // Ensure group is active
+              s.ssid != null &&
+              s.preSharedKey != null)
           .timeout(
         timeout,
         onTimeout: () {
           // Throw a specific exception on timeout
           throw TimeoutException(
-              'Host: Timed out after $timeout waiting for active hotspot state with IP address.');
+              'Host: Timed out after $timeout waiting for active hotspot state.');
         },
       );
       debugPrint("Host: Received active state: $state");
@@ -123,6 +120,8 @@ class FlutterP2pConnectionHost {
         // If advertising fails, log it but don't necessarily fail the group creation.
         debugPrint('Host: Failed to start BLE advertising: $e');
         _isBleAdvertising = false;
+        // Cleanup if state acquisition failed
+        await removeGroup().catchError((_) => null);
         // Optionally rethrow if advertising is critical: throw Exception('Failed to start BLE advertising: $e');
       }
     } else {
@@ -132,15 +131,11 @@ class FlutterP2pConnectionHost {
     // Create and start p2p transport stream
     // The host IP address MUST be non-null here due to the firstWhere check above.
     _p2pTransport = P2pTransportHost(
-      hostIp: state.hostIpAddress!,
       defaultPort: _defaultP2pTransportPort,
       username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
     );
     try {
-      await _p2pTransport!
-          .start(); // Use ! because we checked state.hostIpAddress
-      debugPrint(
-          'Host: P2P Transport started on ${state.hostIpAddress}:${_p2pTransport?.portInUse ?? _defaultP2pTransportPort}');
+      await _p2pTransport!.start();
     } catch (e) {
       debugPrint('Host: Failed to start P2P Transport: $e');
       // Clean up group if transport fails to start, as it's likely unusable
@@ -214,11 +209,11 @@ class FlutterP2pConnectionHost {
     return _p2pTransport!.receivedMessages;
   }
 
-  /// Provides a stream that emits the updated list of connected client IDs
+  /// Provides a stream that emits the updated list of connected [P2pClientInfo]s
   /// whenever a client connects or disconnects.
   ///
   /// Throws a [StateError] if the P2P transport is not active.
-  Stream<List<String>> streamClientList() {
+  Stream<List<P2pClientInfo>> streamClientList() {
     if (_p2pTransport == null) {
       throw StateError(
           'Host: P2P transport is not active. Cannot stream client list.');
@@ -306,7 +301,7 @@ class FlutterP2pConnectionClient {
     // Ensure scanning is stopped before disposing.
     await stopScan().catchError((_) => null);
     // Ensure disconnection from hotspot (which also handles transport) before disposing.
-    await disconnectFromHotspot().catchError((_) => null);
+    await disconnect().catchError((_) => null);
     // Dispose the transport explicitly if it wasn't handled by disconnect
     await _p2pTransport?.dispose().catchError((_) => null);
     _p2pTransport = null;
@@ -320,7 +315,7 @@ class FlutterP2pConnectionClient {
   /// whenever new devices are found. The scan automatically stops after the
   /// specified [timeout] duration (default 15 seconds).
   ///
-  /// - [onData]: Callback function invoked with a list of [BleFoundDevice] found
+  /// - [onData]: Callback function invoked with a list of [BleDiscoveredDevice] found
   ///             during the scan. Can be null if only interested in completion/error.
   /// - [onError]: Optional callback for handling errors during the scan stream.
   /// - [onDone]: Optional callback invoked when the scan stream is closed (e.g., timeout or manual stop).
@@ -331,8 +326,8 @@ class FlutterP2pConnectionClient {
   /// This subscription can be used to manually cancel the scan before the timeout.
   ///
   /// Throws an exception if starting the native BLE scan fails.
-  Future<StreamSubscription<List<BleFoundDevice>>> startScan(
-    void Function(List<BleFoundDevice>)? onData, {
+  Future<StreamSubscription<List<BleDiscoveredDevice>>> startScan(
+    void Function(List<BleDiscoveredDevice>)? onData, {
     Function? onError,
     void Function()? onDone,
     bool? cancelOnError,
@@ -344,7 +339,7 @@ class FlutterP2pConnectionClient {
     }
     debugPrint("Client: Starting BLE scan...");
 
-    StreamSubscription<List<BleFoundDevice>>? streamSub;
+    StreamSubscription<List<BleDiscoveredDevice>>? streamSub;
     Timer? timer;
 
     // Define cleanup logic
@@ -428,22 +423,23 @@ class FlutterP2pConnectionClient {
   /// 1. Connects to the specified BLE device.
   /// 2. Listens for SSID and PSK data sent over BLE characteristics.
   /// 3. Disconnects from the BLE device.
-  /// 4. Calls [connectToHotspot] with the retrieved credentials.
+  /// 4. Calls [connectWithCredentials] with the retrieved credentials.
   ///
   /// This method assumes the target BLE device is a P2P host advertising its
   /// credentials according to a specific protocol (e.g., sending SSID then PSK
   /// as separate messages on a specific characteristic).
   ///
-  /// - [deviceAddress]: The MAC address of the BLE device to connect to.
+  /// - [device]: The [BleDiscoveredDevice] to connect to.
   /// - [timeout]: Duration to wait for credentials via BLE. Defaults to 10 seconds.
   ///
   /// Throws an [Exception] or [TimeoutException] if connecting to the BLE device fails,
   /// if credentials are not received within the timeout, or if connecting to the
   /// Wi-Fi hotspot subsequently fails.
-  Future<void> connectToFoundDevice(
-    String deviceAddress, {
+  Future<void> connectWithDevice(
+    BleDiscoveredDevice device, {
     Duration timeout = const Duration(seconds: 10),
   }) async {
+    String deviceAddress = device.deviceAddress;
     debugPrint("Client: Connecting to found device $deviceAddress via BLE...");
     // Connect to the BLE device first.
     await FlutterP2pConnectionPlatform.instance.connectBleDevice(deviceAddress);
@@ -514,10 +510,10 @@ class FlutterP2pConnectionClient {
       // Credentials received, now connect to the Wi-Fi hotspot.
       debugPrint("Client: Attempting to connect to hotspot: $ssid");
       // Delegate to the specific hotspot connection method which handles transport init.
-      await connectToHotspot(ssid!, psk!); // Use non-null assertion
+      await connectWithCredentials(ssid!, psk!); // Use non-null assertion
       debugPrint("Client: Successfully connected to hotspot: $ssid");
     } catch (e) {
-      debugPrint("Client: Error during connectToFoundDevice: $e");
+      debugPrint("Client: Error during connectWithDevice: $e");
       rethrow; // Propagate the error
     } finally {
       // Always ensure the BLE data subscription is cancelled
@@ -549,7 +545,7 @@ class FlutterP2pConnectionClient {
   /// Throws an [Exception] or [TimeoutException] if the connection confirmation
   /// (including obtaining the gateway IP) fails within the timeout period, or if
   /// the subsequent P2P transport connection fails.
-  Future<void> connectToHotspot(
+  Future<void> connectWithCredentials(
     String ssid,
     String psk, {
     Duration timeout = const Duration(seconds: 60),
@@ -589,7 +585,7 @@ class FlutterP2pConnectionClient {
     } catch (e) {
       debugPrint("Client: Error waiting for connection state: $e");
       // Attempt cleanup if state acquisition failed
-      await disconnectFromHotspot().catchError((_) => null);
+      await disconnect().catchError((_) => null);
       rethrow;
     }
 
@@ -600,14 +596,11 @@ class FlutterP2pConnectionClient {
       username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
     );
     try {
-      await _p2pTransport!
-          .connect(); // Use ! because we checked state.hostGatewayIpAddress
-      debugPrint(
-          'Client: P2P Transport connected to ${state.hostGatewayIpAddress}:$_defaultP2pTransportPort');
+      await _p2pTransport!.connect();
     } catch (e) {
       debugPrint('Client: Failed to connect P2P Transport: $e');
       // Clean up Wi-Fi connection if transport fails to connect
-      await disconnectFromHotspot().catchError((_) => null);
+      await disconnect().catchError((_) => null);
       await _p2pTransport?.dispose(); // Dispose transport
       _p2pTransport = null;
       throw Exception('Client: Failed to connect P2P Transport: $e');
@@ -618,7 +611,7 @@ class FlutterP2pConnectionClient {
   ///
   /// This disconnects and disposes the [P2pTransportClient] first, then triggers the native
   /// platform disconnection from the hotspot.
-  Future<void> disconnectFromHotspot() async {
+  Future<void> disconnect() async {
     debugPrint("Client: Disconnecting from hotspot...");
     // Disconnect and dispose the transport layer first if it exists.
     await _p2pTransport?.disconnect().catchError((e) {
@@ -664,11 +657,11 @@ class FlutterP2pConnectionClient {
     return _p2pTransport!.receivedMessages;
   }
 
-  /// Provides a stream that emits the updated list of connected client IDs
+  /// Provides a stream that emits the updated list of connected [P2pClientInfo]s
   /// whenever a client connects or disconnects.
   ///
   /// Throws a [StateError] if the P2P transport is not active.
-  Stream<List<String>> streamClientList() {
+  Stream<List<P2pClientInfo>> streamClientList() {
     if (_p2pTransport == null) {
       throw StateError(
           'Client: P2P transport is not active. Cannot stream client list.');
@@ -833,13 +826,13 @@ class FlutterP2pConnection {
       }
     }
 
-    // Additionally check the basic Bluetooth permission for good measure,
-    // although the specific ones above are key on newer Android.
-    if (!(await Permission.bluetooth.status.isGranted)) {
-      debugPrint(
-          "Permission missing: ${Permission.bluetooth} status: ${await Permission.bluetooth.status}");
-      return false;
-    }
+    // // Additionally check the basic Bluetooth permission for good measure,
+    // // although the specific ones above are key on newer Android.
+    // if (!(await Permission.bluetooth.status.isGranted)) {
+    //   debugPrint(
+    //       "Permission missing: ${Permission.bluetooth} status: ${await Permission.bluetooth.status}");
+    //   return false;
+    // }
 
     return true; // All checked permissions are granted.
   }
@@ -1177,7 +1170,7 @@ class BleConnectionState {
 ///
 /// Contains basic information about the discovered device.
 @immutable
-class BleFoundDevice {
+class BleDiscoveredDevice {
   /// The MAC address of the discovered BLE device.
   final String deviceAddress;
 
@@ -1189,15 +1182,15 @@ class BleFoundDevice {
   final int rssi;
 
   /// Creates a representation of a discovered BLE device.
-  const BleFoundDevice({
+  const BleDiscoveredDevice({
     required this.deviceAddress,
     required this.deviceName,
     required this.rssi,
   });
 
-  /// Creates a [BleFoundDevice] instance from a map (typically from platform channel).
-  factory BleFoundDevice.fromMap(Map<dynamic, dynamic> map) {
-    return BleFoundDevice(
+  /// Creates a [BleDiscoveredDevice] instance from a map (typically from platform channel).
+  factory BleDiscoveredDevice.fromMap(Map<dynamic, dynamic> map) {
+    return BleDiscoveredDevice(
       deviceAddress: map['deviceAddress'] as String? ??
           'Unknown Address', // Provide default
       // Handle potential null or empty names from native side
@@ -1208,7 +1201,7 @@ class BleFoundDevice {
     );
   }
 
-  /// Converts the [BleFoundDevice] instance to a map.
+  /// Converts the [BleDiscoveredDevice] instance to a map.
   Map<String, dynamic> toMap() {
     return {
       'deviceAddress': deviceAddress,
@@ -1219,14 +1212,14 @@ class BleFoundDevice {
 
   @override
   String toString() {
-    return 'BleFoundDevice(deviceAddress: $deviceAddress, deviceName: $deviceName, rssi: $rssi)';
+    return 'BleDiscoveredDevice(deviceAddress: $deviceAddress, deviceName: $deviceName, rssi: $rssi)';
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
 
-    return other is BleFoundDevice &&
+    return other is BleDiscoveredDevice &&
         other.deviceAddress == deviceAddress &&
         other.deviceName == deviceName &&
         other.rssi == rssi;
@@ -1240,7 +1233,7 @@ class BleFoundDevice {
 
 /// Represents data received from a connected BLE device via a characteristic.
 ///
-/// Used internally during the [FlutterP2pConnectionClient.connectToFoundDevice] process.
+/// Used internally during the [FlutterP2pConnectionClient.connectWithDevice] process.
 @immutable
 class BleReceivedData {
   /// The MAC address of the BLE device from which data was received.

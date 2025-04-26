@@ -132,7 +132,7 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
         'streamBleConnectionState() has not been implemented.');
   }
 
-  Stream<List<BleFoundDevice>> streamBleScanResult() {
+  Stream<List<BleDiscoveredDevice>> streamBleScanResult() {
     throw UnimplementedError('streamBleScanResult() has not been implemented.');
   }
 

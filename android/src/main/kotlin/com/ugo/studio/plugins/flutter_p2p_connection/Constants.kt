@@ -25,7 +25,7 @@ object Constants {
 
     // BLE Specific
     // Generate a unique UUID for your application's service
-    val BLE_CREDENTIAL_SERVICE_UUID: UUID = UUID.fromString("0f0540bd-4a04-46d0-b90d-b0347453ec3a") 
+    val BLE_CREDENTIAL_SERVICE_UUID: UUID = UUID.fromString("0f0540bd-4a04-46d0-b90d-b0447453ec3a") 
     val BLE_SSID_CHARACTERISTIC_UUID: UUID = UUID.fromString("7a374008-fc31-4476-be4d-1b3347233f00") 
     val BLE_PSK_CHARACTERISTIC_UUID: UUID = UUID.fromString("81a5ec62-a8b1-48b0-b533-938636a57ba4") 
 

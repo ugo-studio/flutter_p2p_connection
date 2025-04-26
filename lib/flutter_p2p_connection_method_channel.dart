@@ -29,7 +29,7 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   final EventChannel bleConnectionStateEventChannel =
       const EventChannel('flutter_p2p_connection_bleConnectionState');
 
-  /// The event channel for receiving lists of [BleFoundDevice] during scans.
+  /// The event channel for receiving lists of [BleDiscoveredDevice] during scans.
   @visibleForTesting
   final EventChannel bleScanResultEventChannel =
       const EventChannel('flutter_p2p_connection_bleScanResult');
@@ -44,7 +44,7 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   Stream<HotspotHostState>? _hotspotInfoStream;
   Stream<HotspotClientState>? _clientStateStream;
   Stream<BleConnectionState>? _bleConnectionStateStream;
-  Stream<List<BleFoundDevice>>? _bleScanResultStream;
+  Stream<List<BleDiscoveredDevice>>? _bleScanResultStream;
   Stream<BleReceivedData>? _bleReceivedDataStream;
 
   /// Fetches the native platform version string.
@@ -377,15 +377,15 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
     return _bleConnectionStateStream!;
   }
 
-  /// Provides a broadcast stream emitting lists of [BleFoundDevice] during a BLE scan.
+  /// Provides a broadcast stream emitting lists of [BleDiscoveredDevice] during a BLE scan.
   ///
   /// Each event is a list of devices found or updated in the latest scan interval.
   /// Being a broadcast stream, it supports multiple listeners simultaneously.
   /// Each listener will receive events emitted after it subscribes.
   ///
-  /// Returns a [Stream] of `List<BleFoundDevice>`.
+  /// Returns a [Stream] of `List<BleDiscoveredDevice>`.
   @override
-  Stream<List<BleFoundDevice>> streamBleScanResult() {
+  Stream<List<BleDiscoveredDevice>> streamBleScanResult() {
     _bleScanResultStream ??=
         bleScanResultEventChannel.receiveBroadcastStream().map((dynamic event) {
       // Expecting a List from the platform channel
@@ -393,11 +393,11 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
         try {
           return event
               .whereType<Map>() // Filter out any non-map elements defensively
-              .map((deviceMap) => BleFoundDevice.fromMap(Map.from(deviceMap)))
+              .map((deviceMap) => BleDiscoveredDevice.fromMap(Map.from(deviceMap)))
               .toList();
         } catch (e) {
           debugPrint(
-              "[MethodChannelFlutterP2pConnection] Error parsing BleFoundDevice list: $e, Event: $event");
+              "[MethodChannelFlutterP2pConnection] Error parsing BleDiscoveredDevice list: $e, Event: $event");
           rethrow;
         }
       } else {
