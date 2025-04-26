@@ -13,10 +13,12 @@ class HostPage extends StatefulWidget {
 }
 
 class _HostPageState extends State<HostPage> {
+  final TextEditingController textEditingController = TextEditingController();
   late FlutterP2pConnection p2p;
 
   StreamSubscription<HotspotHostState>? hotspotStateSubscription;
   StreamSubscription<List<P2pClientInfo>>? clientListStream;
+  StreamSubscription<P2pMessage>? messageStream;
 
   HotspotHostState? hotspotState;
   List<P2pClientInfo> clientList = [];
@@ -38,8 +40,10 @@ class _HostPageState extends State<HostPage> {
   @override
   void dispose() {
     p2p.host.dispose();
+    textEditingController.dispose();
     hotspotStateSubscription?.cancel();
     clientListStream?.cancel();
+    messageStream?.cancel();
     super.dispose();
   }
 
@@ -85,6 +89,9 @@ class _HostPageState extends State<HostPage> {
           clientList = list;
         });
       });
+      messageStream = p2p.client.streamReceivedMessages().listen((data) {
+        if (data.type == P2pMessageType.chat) snack(data.payload);
+      });
       snack("created group");
     } catch (e) {
       snack("failed to create group: $e");
@@ -112,6 +119,14 @@ class _HostPageState extends State<HostPage> {
         ),
       ),
     );
+  }
+
+  void sendMessage() async {
+    var message = textEditingController.text;
+    if (message.isEmpty) return;
+
+    await p2p.host.broadcast(P2pMessage(
+        senderId: "senderId", type: P2pMessageType.chat, payload: "payload"));
   }
 
   @override
@@ -193,6 +208,17 @@ class _HostPageState extends State<HostPage> {
                 ),
               ),
               const SizedBox(height: 30),
+
+              // send messages
+              const Text("Send messages:"),
+              TextField(
+                controller: textEditingController,
+                keyboardType: TextInputType.text,
+                decoration: const InputDecoration(
+                  hintText: 'Enter your message here',
+                ),
+              ),
+              ElevatedButton(onPressed: sendMessage, child: const Text('send')),
             ],
           ),
         ),

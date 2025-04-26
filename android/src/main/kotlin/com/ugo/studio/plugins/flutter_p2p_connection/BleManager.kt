@@ -153,17 +153,17 @@ class BleManager(
                     .build()
 
                 // Data for the main advertisement packet
-                val data = AdvertiseData.Builder()
+                val advertiseData = AdvertiseData.Builder()
                     .setIncludeDeviceName(false) // Usually better not to include name for privacy/size
                     .addServiceUuid(ParcelUuid(serviceUuid)) // Advertise our custom service
                     .build()
 
-                // // Data for the scan response packet (include the name here)
-                // val scanResponseData = AdvertiseData.Builder()
-                //     .setIncludeDeviceName(true) // Include default name in scan response
-                //     .build()
+                // Data for the scan response packet (include the name here)
+                val scanResponseData = AdvertiseData.Builder()
+                    .setIncludeDeviceName(true) // Include default name in scan response
+                    .build()
 
-                bluetoothLeAdvertiser?.startAdvertising(settings, data, advertiseCallback)
+                bluetoothLeAdvertiser?.startAdvertising(settings, advertiseData, scanResponseData, advertiseCallback)
                 Log.d(TAG, "BLE Advertising start requested.")
                 result?.success(true) // Indicate request was made
                 // Actual start confirmation in advertiseCallback
@@ -379,10 +379,10 @@ class BleManager(
         // Add service to server
         val serviceAdded = gattServer?.addService(service) ?: false
         if (serviceAdded) {
-            Log.d(TAG, "GATT Server setup successful, service added.")
+            Log.d(TAG, "GATT Server setup successful, service added($serviceUuid).")
             callback(true)
         } else {
-            Log.e(TAG, "Failed to add service to GATT server.")
+            Log.e(TAG, "Failed to add service($serviceUuid) to GATT server.")
             closeGattServer()
             callback(false)
         }
@@ -740,6 +740,17 @@ class BleManager(
             Log.d(TAG, "GATT Client: Services discovered for $deviceAddress with status $status")
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
+                // // --- Add this logging ---
+                // Log.d(TAG, "Listing all discovered services for $deviceAddress:")
+                // gatt.services?.forEachIndexed { index, service ->
+                //     Log.d(TAG, "  Service [${index}]: ${service.uuid}")
+                //     service.characteristics?.forEachIndexed { charIndex, characteristic ->
+                //         Log.d(TAG, "    Characteristic [${charIndex}]: ${characteristic.uuid}")
+                //     }
+                // }
+                // // --- End logging ---
+
+                Log.d(TAG, "Attempting to get service: '$serviceUuid'") // Log the UUID you're looking for
                 val credentialService = gatt.getService(serviceUuid)
                 if (credentialService == null) {
                     Log.e(TAG, "GATT Client: Credential service ($serviceUuid) not found on $deviceAddress.")

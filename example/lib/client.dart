@@ -13,10 +13,12 @@ class ClientPage extends StatefulWidget {
 }
 
 class _ClientPageState extends State<ClientPage> {
+  final TextEditingController textEditingController = TextEditingController();
   late FlutterP2pConnection p2p;
 
   StreamSubscription<HotspotClientState>? hotspotStateSubscription;
   StreamSubscription<List<P2pClientInfo>>? clientListStream;
+  StreamSubscription<P2pMessage>? messageStream;
 
   HotspotClientState? hotspotState;
   List<BleDiscoveredDevice> discoveredDevices = [];
@@ -40,8 +42,10 @@ class _ClientPageState extends State<ClientPage> {
   @override
   void dispose() {
     p2p.client.dispose();
+    textEditingController.dispose();
     hotspotStateSubscription?.cancel();
     clientListStream?.cancel();
+    messageStream?.cancel();
     super.dispose();
   }
 
@@ -96,6 +100,9 @@ class _ClientPageState extends State<ClientPage> {
         clientList = list;
       });
     });
+    messageStream = p2p.client.streamReceivedMessages().listen((data) {
+      if (data.type == P2pMessageType.chat) snack(data.payload);
+    });
     snack('connected to ${device.deviceAddress}');
 
     setState(() {
@@ -121,6 +128,13 @@ class _ClientPageState extends State<ClientPage> {
     clientListStream?.cancel();
     await p2p.client.disconnect();
     snack("disconnected");
+  }
+
+  void sendMessage() async {
+    var message = textEditingController.text;
+    if (message.isEmpty) return;
+
+    await p2p.client.send(P2pMessageType.chat, "payload");
   }
 
   @override
@@ -240,6 +254,16 @@ class _ClientPageState extends State<ClientPage> {
                 ),
               ),
               const SizedBox(height: 30),
+
+              const Text("Send messages:"),
+              TextField(
+                controller: textEditingController,
+                keyboardType: TextInputType.text,
+                decoration: const InputDecoration(
+                  hintText: 'Enter your message here',
+                ),
+              ),
+              ElevatedButton(onPressed: sendMessage, child: const Text('send'))
             ],
           ),
         ),

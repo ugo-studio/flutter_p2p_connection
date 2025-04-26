@@ -557,12 +557,14 @@ class P2pTransportClient {
 
     // Listen for messages from the server.
     _socketSubscription = _socket!.listen(
-      (data) {
+      (data) async {
         try {
           // Assume data is a JSON string representing P2pMessage
           final message = P2pMessage.fromJsonString(data as String);
           // Add the received message to the public stream.
           if (message.type == P2pMessageType.clientList) {
+            // Delay before updating client list
+            await Future.delayed(const Duration(milliseconds: 800));
             // Store the received client list and notify listeners
             _clientList = message.clients ?? [];
             _clientList.removeWhere(
@@ -573,9 +575,9 @@ class P2pTransportClient {
           } else if (message.type == P2pMessageType.chat ||
               message.type == P2pMessageType.fileInfo) {
             _receivedMessagesController.add(message);
+            debugPrint(
+                "P2P Transport Client: Received from server: ${message.type}");
           }
-          debugPrint(
-              "P2P Transport Client: Received from server: ${message.type}");
         } catch (e) {
           debugPrint(
               "P2P Transport Client: Error parsing server message: $e\nData: $data");

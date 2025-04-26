@@ -201,7 +201,7 @@ class FlutterP2pConnectionHost {
   /// This stream emits [P2pMessage] objects received from any connected client.
   ///
   /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
-  Stream<P2pMessage> streamReceivedData() {
+  Stream<P2pMessage> streamReceivedMessages() {
     if (_p2pTransport == null) {
       throw StateError(
           'Host: P2P transport is not active. Cannot stream data.');
@@ -430,14 +430,14 @@ class FlutterP2pConnectionClient {
   /// as separate messages on a specific characteristic).
   ///
   /// - [device]: The [BleDiscoveredDevice] to connect to.
-  /// - [timeout]: Duration to wait for credentials via BLE. Defaults to 10 seconds.
+  /// - [timeout]: Duration to wait for credentials via BLE. Defaults to 20 seconds.
   ///
   /// Throws an [Exception] or [TimeoutException] if connecting to the BLE device fails,
   /// if credentials are not received within the timeout, or if connecting to the
   /// Wi-Fi hotspot subsequently fails.
   Future<void> connectWithDevice(
     BleDiscoveredDevice device, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration timeout = const Duration(seconds: 20),
   }) async {
     String deviceAddress = device.deviceAddress;
     debugPrint("Client: Connecting to found device $deviceAddress via BLE...");
@@ -548,7 +548,7 @@ class FlutterP2pConnectionClient {
   Future<void> connectWithCredentials(
     String ssid,
     String psk, {
-    Duration timeout = const Duration(seconds: 60),
+    Duration timeout = const Duration(seconds: 10),
   }) async {
     debugPrint("Client: Connecting to hotspot '$ssid'...");
     // Stop any existing transport first
@@ -649,7 +649,7 @@ class FlutterP2pConnectionClient {
   /// This stream emits [P2pMessage] objects received from the connected host.
   ///
   /// Throws a [StateError] if the P2P transport is not active or has not been initialized.
-  Stream<P2pMessage> streamReceivedData() {
+  Stream<P2pMessage> streamReceivedMessages() {
     if (_p2pTransport == null) {
       throw StateError(
           'Client: P2P transport is not active. Cannot stream data.');
