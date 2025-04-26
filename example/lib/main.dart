@@ -51,7 +51,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 );
               },
               child: Container(
-                height: 200,
+                height: 150,
                 width: MediaQuery.of(context).size.width,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
@@ -81,7 +81,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 );
               },
               child: Container(
-                height: 200,
+                height: 150,
                 width: MediaQuery.of(context).size.width,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),

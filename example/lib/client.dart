@@ -27,7 +27,7 @@ class _ClientPageState extends State<ClientPage> {
     p2p = FlutterP2pConnection();
     p2p.client.initialize().whenComplete(() {
       hotspotStateSubscription =
-          p2p.client.onHotspotStateChanged().listen((state) {
+          p2p.client.streamHotspotState().listen((state) {
         setState(() {
           hotspotState = state;
         });

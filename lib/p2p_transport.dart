@@ -4,19 +4,19 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart'; // For debugPrint
 
-enum SocketMessagetype { chat, fileInfo, clientList, decodeError, unknown }
+enum P2pMessageType { chat, fileInfo, clientList, decodeError, unknown }
 
 /// A simple message class that can be serialized to/from JSON.
 /// It includes basic fields: [senderId] (identifies the sender, e.g., client hashcode or 'server'),
 /// [type] (application-defined message type), and [payload] (the actual data).
 /// Optionally, it can include a list of clients (useful for broadcasting the client list).
 @immutable
-class SocketMessage {
+class P2pMessage {
   /// Identifier for the sender (e.g., client hashcode, 'server', or a custom ID).
   final String senderId;
 
   /// Application-defined type for the message (e.g., 'chat', 'fileInfo', 'clientList').
-  final SocketMessagetype type;
+  final P2pMessageType type;
 
   /// The actual content/data of the message. Can be any JSON-encodable object.
   /// For binary data, consider Base64 encoding it into a string here, or use a different transport mechanism.
@@ -25,41 +25,41 @@ class SocketMessage {
   /// Optional list of client identifiers, typically used by the server to inform clients about connections.
   final List<String>? clients;
 
-  const SocketMessage({
+  const P2pMessage({
     required this.senderId,
     required this.type,
     required this.payload,
     this.clients,
   });
 
-  /// Deserialize a SocketMessage instance from a JSON map.
-  factory SocketMessage.fromJson(Map<String, dynamic> json) {
-    return SocketMessage(
+  /// Deserialize a P2pMessage instance from a JSON map.
+  factory P2pMessage.fromJson(Map<String, dynamic> json) {
+    return P2pMessage(
       senderId: json['senderId'] as String? ?? 'unknown',
-      type: json['type'] as SocketMessagetype? ?? SocketMessagetype.unknown,
+      type: json['type'] as P2pMessageType? ?? P2pMessageType.unknown,
       payload: json['payload'], // Keep payload as dynamic
       clients:
           json['clients'] != null ? List<String>.from(json['clients']) : null,
     );
   }
 
-  /// Deserialize a SocketMessage instance from a JSON string.
-  factory SocketMessage.fromJsonString(String jsonString) {
+  /// Deserialize a P2pMessage instance from a JSON string.
+  factory P2pMessage.fromJsonString(String jsonString) {
     try {
       final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
-      return SocketMessage.fromJson(jsonMap);
+      return P2pMessage.fromJson(jsonMap);
     } catch (e) {
-      debugPrint("Error decoding SocketMessage from string: $e");
+      debugPrint("Error decoding P2pMessage from string: $e");
       // Return a default error message or rethrow, depending on desired handling
-      return SocketMessage(
+      return P2pMessage(
         senderId: 'error',
-        type: SocketMessagetype.decodeError,
+        type: P2pMessageType.decodeError,
         payload: jsonString,
       );
     }
   }
 
-  /// Serialize the SocketMessage instance to a JSON map.
+  /// Serialize the P2pMessage instance to a JSON map.
   Map<String, dynamic> toJson() => {
         'senderId': senderId,
         'type': type,
@@ -67,7 +67,7 @@ class SocketMessage {
         if (clients != null) 'clients': clients,
       };
 
-  /// Serialize the SocketMessage instance to a JSON string.
+  /// Serialize the P2pMessage instance to a JSON string.
   String toJsonString() {
     return jsonEncode(toJson());
   }
@@ -79,14 +79,14 @@ class SocketMessage {
     if (payloadSummary.length > 100) {
       payloadSummary = '${payloadSummary.substring(0, 97)}...';
     }
-    return 'SocketMessage(senderId: $senderId, type: $type, payload: $payloadSummary, clients: $clients)';
+    return 'P2pMessage(senderId: $senderId, type: $type, payload: $payloadSummary, clients: $clients)';
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
 
-    return other is SocketMessage &&
+    return other is P2pMessage &&
         other.senderId == senderId &&
         other.type == type &&
         // Note: Deep equality check for payload might be needed if it's complex
@@ -107,6 +107,7 @@ class SocketMessage {
 class P2pTransportHost {
   final String hostIp;
   final int defaultPort;
+  final String username;
   HttpServer? _server;
   int? _portInUse;
 
@@ -114,8 +115,8 @@ class P2pTransportHost {
   final Map<String, WebSocket> _clients = {};
 
   /// Stream controller for broadcasting received messages from clients.
-  final StreamController<SocketMessage> _receivedMessagesController =
-      StreamController<SocketMessage>.broadcast();
+  final StreamController<P2pMessage> _receivedMessagesController =
+      StreamController<P2pMessage>.broadcast();
 
   /// Stream controller for broadcasting client connection/disconnection events.
   /// Emits the current list of client IDs.
@@ -123,8 +124,7 @@ class P2pTransportHost {
       StreamController<List<String>>.broadcast();
 
   /// Public stream of messages received from any connected client.
-  Stream<SocketMessage> get receivedMessages =>
-      _receivedMessagesController.stream;
+  Stream<P2pMessage> get receivedMessages => _receivedMessagesController.stream;
 
   /// Public stream emitting the updated list of connected client IDs whenever a
   /// client connects or disconnects.
@@ -134,7 +134,13 @@ class P2pTransportHost {
   /// Null if the server is not running.
   int? get portInUse => _portInUse;
 
-  P2pTransportHost({required this.hostIp, required this.defaultPort});
+  /// Public list of the connected client IDs
+  List<String> get clientList => _clients.keys.toList();
+
+  P2pTransportHost(
+      {required this.hostIp,
+      required this.defaultPort,
+      required this.username});
 
   /// Starts the WebSocket server.
   ///
@@ -225,11 +231,11 @@ class P2pTransportHost {
     client.listen(
       (data) {
         try {
-          // Assume data is a JSON string representing SocketMessage
-          final message = SocketMessage.fromJsonString(data as String);
+          // Assume data is a JSON string representing P2pMessage
+          final message = P2pMessage.fromJsonString(data as String);
           // Add the received message to the public stream.
-          if (message.type == SocketMessagetype.chat ||
-              message.type == SocketMessagetype.fileInfo) {
+          if (message.type == P2pMessageType.chat ||
+              message.type == P2pMessageType.fileInfo) {
             _receivedMessagesController.add(message);
           }
           debugPrint(
@@ -265,20 +271,19 @@ class P2pTransportHost {
     _clientListController.add(currentClientIds);
     debugPrint(
         "P2P Transport Host: Broadcasting client list update: $currentClientIds");
-    //  send this list as a SocketMessage to all clients
-    broadcast(SocketMessage(
+    //  send this list as a P2pMessage to all clients
+    broadcast(P2pMessage(
       senderId: 'server',
-      type: SocketMessagetype.clientList,
+      type: P2pMessageType.clientList,
       payload: currentClientIds,
     ));
   }
 
   /// Broadcasts a [message] to all connected clients.
   ///
-  /// - [message]: The [SocketMessage] to send.
+  /// - [message]: The [P2pMessage] to send.
   /// - [excludeClientId]: Optional ID of a client to exclude from the broadcast (e.g., the original sender).
-  Future<void> broadcast(SocketMessage message,
-      {String? excludeClientId}) async {
+  Future<void> broadcast(P2pMessage message, {String? excludeClientId}) async {
     if (_server == null) {
       debugPrint("P2P Transport Host: Cannot broadcast, server not running.");
       return;
@@ -304,10 +309,10 @@ class P2pTransportHost {
   /// Sends a [message] to a specific client identified by [clientId].
   ///
   /// - [clientId]: The target client's ID (its hash code string).
-  /// - [message]: The [SocketMessage] to send.
+  /// - [message]: The [P2pMessage] to send.
   ///
   /// Returns `true` if the client was found and message was sent, `false` otherwise.
-  Future<bool> sendToClient(String clientId, SocketMessage message) async {
+  Future<bool> sendToClient(String clientId, P2pMessage message) async {
     if (_server == null) {
       debugPrint("P2P Transport Host: Cannot send, server not running.");
       return false;
@@ -360,14 +365,16 @@ class P2pTransportHost {
 class P2pTransportClient {
   final String hostIp;
   final int defaultPort;
+  final String username;
   WebSocket? _socket;
   bool _isConnected = false;
   bool _isConnecting = false; // Flag to prevent concurrent connection attempts
   StreamSubscription? _socketSubscription;
+  final List<String> _clientList = [];
 
   /// Stream controller for broadcasting messages received from the server.
-  final StreamController<SocketMessage> _receivedMessagesController =
-      StreamController<SocketMessage>.broadcast();
+  final StreamController<P2pMessage> _receivedMessagesController =
+      StreamController<P2pMessage>.broadcast();
 
   /// Stream controller for broadcasting client connection/disconnection events.
   /// Emits the current list of client IDs.
@@ -375,8 +382,7 @@ class P2pTransportClient {
       StreamController<List<String>>.broadcast();
 
   /// Public stream of messages received from the server.
-  Stream<SocketMessage> get receivedMessages =>
-      _receivedMessagesController.stream;
+  Stream<P2pMessage> get receivedMessages => _receivedMessagesController.stream;
 
   /// Public stream emitting the updated list of connected client IDs whenever a
   /// client connects or disconnects.
@@ -385,7 +391,13 @@ class P2pTransportClient {
   /// Returns `true` if the client is currently connected to the server.
   bool get isConnected => _isConnected && _socket?.readyState == WebSocket.open;
 
-  P2pTransportClient({required this.hostIp, required this.defaultPort});
+  /// Public list of the connected client IDs
+  List<String> get clientList => _clientList;
+
+  P2pTransportClient(
+      {required this.hostIp,
+      required this.defaultPort,
+      required this.username});
 
   /// Attempts to connect to the host WebSocket server.
   ///
@@ -405,12 +417,16 @@ class P2pTransportClient {
     WebSocket? tempSocket;
 
     while (attempts < 10 && tempSocket == null) {
-      final url = "ws://$hostIp:$port";
+      final url = Uri.parse("ws://$hostIp:$port/connect");
+
+      // Add user details to websocket url
+      url.queryParameters.addAll({"username": username});
+
       try {
         debugPrint("P2P Transport Client: Attempting to connect to $url...");
         // Add a timeout to WebSocket.connect to prevent indefinite hangs
-        tempSocket =
-            await WebSocket.connect(url).timeout(const Duration(seconds: 3));
+        tempSocket = await WebSocket.connect(url.toString())
+            .timeout(const Duration(seconds: 3));
         debugPrint("P2P Transport Client: Connected to server at $url");
       } on TimeoutException {
         debugPrint(
@@ -448,13 +464,14 @@ class P2pTransportClient {
     _socketSubscription = _socket!.listen(
       (data) {
         try {
-          // Assume data is a JSON string representing SocketMessage
-          final message = SocketMessage.fromJsonString(data as String);
+          // Assume data is a JSON string representing P2pMessage
+          final message = P2pMessage.fromJsonString(data as String);
           // Add the received message to the public stream.
-          if (message.type == SocketMessagetype.clientList) {
+          if (message.type == P2pMessageType.clientList) {
             _clientListController.add(message.payload as List<String>);
-          } else if (message.type == SocketMessagetype.chat ||
-              message.type == SocketMessagetype.fileInfo) {
+            _clientList.addAll(message.payload as List<String>);
+          } else if (message.type == P2pMessageType.chat ||
+              message.type == P2pMessageType.fileInfo) {
             _receivedMessagesController.add(message);
           }
           debugPrint(
@@ -488,7 +505,7 @@ class P2pTransportClient {
   /// Sends a [message] to the host server.
   ///
   /// Returns `true` if the message was sent, `false` if the socket is not connected.
-  Future<bool> send(SocketMessage message) async {
+  Future<bool> send(P2pMessage message) async {
     if (isConnected) {
       try {
         _socket!.add(message.toJsonString());
@@ -523,10 +540,8 @@ class P2pTransportClient {
     _socket = null;
     _isConnected = false;
 
-    // Close stream controller if it's no longer needed (depends on lifecycle)
-    // If the client instance can be reused, don't close it here.
-    // If dispose() is the final cleanup, close it there.
-    // await _receivedMessagesController.close(); // Close here if client instance is discarded after disconnect
+    // Clear all client connections
+    _clientList.clear();
 
     debugPrint("P2P Transport Client: Disconnected.");
   }

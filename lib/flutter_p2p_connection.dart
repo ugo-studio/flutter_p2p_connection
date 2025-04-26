@@ -86,7 +86,7 @@ class FlutterP2pConnectionHost {
     HotspotHostState state;
     try {
       debugPrint("Host: Waiting for active state with IP...");
-      state = await onHotspotStateChanged()
+      state = await streamHotspotState()
           .firstWhere(
         (s) =>
             s.isActive && // Ensure group is active
@@ -134,6 +134,7 @@ class FlutterP2pConnectionHost {
     _p2pTransport = P2pTransportHost(
       hostIp: state.hostIpAddress!,
       defaultPort: _defaultP2pTransportPort,
+      username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
     );
     try {
       await _p2pTransport!
@@ -196,37 +197,43 @@ class FlutterP2pConnectionHost {
   /// and any failure reasons.
   ///
   /// Returns a [Stream] of [HotspotHostState].
-  Stream<HotspotHostState> onHotspotStateChanged() {
+  Stream<HotspotHostState> streamHotspotState() {
     return FlutterP2pConnectionPlatform.instance.streamHotspotInfo();
   }
 
   /// Provides a stream of messages received from connected clients via the P2P transport layer.
   ///
-  /// This stream emits [SocketMessage] objects received from any connected client.
+  /// This stream emits [P2pMessage] objects received from any connected client.
   ///
-  /// Returns an empty stream if the P2P transport is not active or has not been initialized.
-  Stream<SocketMessage> streamReceivedData() {
-    // Return the transport's stream or an empty stream if transport is null.
-    return _p2pTransport?.receivedMessages ?? const Stream.empty();
+  /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
+  Stream<P2pMessage> streamReceivedData() {
+    if (_p2pTransport == null) {
+      throw StateError(
+          'Host: P2P transport is not active. Cannot stream data.');
+    }
+    return _p2pTransport!.receivedMessages;
   }
 
   /// Provides a stream that emits the updated list of connected client IDs
   /// whenever a client connects or disconnects.
   ///
-  /// Returns an empty stream if the P2P transport is not active.
+  /// Throws a [StateError] if the P2P transport is not active.
   Stream<List<String>> streamClientList() {
-    return _p2pTransport?.clientListStream ?? const Stream.empty();
+    if (_p2pTransport == null) {
+      throw StateError(
+          'Host: P2P transport is not active. Cannot stream client list.');
+    }
+    return _p2pTransport!.clientListStream;
   }
 
-  /// Broadcasts a [SocketMessage] to all connected clients.
+  /// Broadcasts a [P2pMessage] to all connected clients.
   ///
-  /// - [message]: The [SocketMessage] to send. The `senderId` should typically be set
+  /// - [message]: The [P2pMessage] to send. The `senderId` should typically be set
   ///              to identify the host (e.g., 'server' or a host-specific ID).
   /// - [excludeClientId]: Optional ID of a client to exclude from the broadcast.
   ///
   /// Throws a [StateError] if the P2P transport is not active.
-  Future<void> broadcast(SocketMessage message,
-      {String? excludeClientId}) async {
+  Future<void> broadcast(P2pMessage message, {String? excludeClientId}) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
       // Check if server is running
@@ -237,15 +244,15 @@ class FlutterP2pConnectionHost {
     await transport.broadcast(message, excludeClientId: excludeClientId);
   }
 
-  /// Sends a [SocketMessage] to a specific client.
+  /// Sends a [P2pMessage] to a specific client.
   ///
   /// - [clientId]: The ID of the target client (obtained from `streamClientList` or message `senderId`).
-  /// - [message]: The [SocketMessage] to send. The `senderId` should typically be set
+  /// - [message]: The [P2pMessage] to send. The `senderId` should typically be set
   ///              to identify the host (e.g., 'server' or a host-specific ID).
   ///
   /// Returns `true` if the client was found and message was sent, `false` otherwise.
   /// Throws a [StateError] if the P2P transport is not active.
-  Future<bool> sendToClient(String clientId, SocketMessage message) async {
+  Future<bool> sendToClient(String clientId, P2pMessage message) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
       // Check if server is running
@@ -564,7 +571,7 @@ class FlutterP2pConnectionClient {
     try {
       debugPrint(
           "Client: Waiting for active connection state with gateway IP...");
-      state = await onHotspotStateChanged()
+      state = await streamHotspotState()
           .firstWhere(
         (s) =>
             s.isActive && // Must be active
@@ -590,6 +597,7 @@ class FlutterP2pConnectionClient {
     _p2pTransport = P2pTransportClient(
       hostIp: state.hostGatewayIpAddress!, // IP is confirmed non-null here
       defaultPort: _defaultP2pTransportPort,
+      username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
     );
     try {
       await _p2pTransport!
@@ -639,26 +647,33 @@ class FlutterP2pConnectionClient {
   /// host's SSID, and IP address details (gateway and client IP).
   ///
   /// Returns a [Stream] of [HotspotClientState].
-  Stream<HotspotClientState> onHotspotStateChanged() {
+  Stream<HotspotClientState> streamHotspotState() {
     return FlutterP2pConnectionPlatform.instance.streamHotspotClientState();
   }
 
   /// Provides a stream of messages received from the host via the P2P transport layer.
   ///
-  /// This stream emits [SocketMessage] objects received from the connected host.
+  /// This stream emits [P2pMessage] objects received from the connected host.
   ///
-  /// Returns an empty stream if the P2P transport is not active or has not been initialized.
-  Stream<SocketMessage> streamReceivedData() {
-    // Return the transport's stream or an empty stream if transport is null.
-    return _p2pTransport?.receivedMessages ?? const Stream.empty();
+  /// Throws a [StateError] if the P2P transport is not active or has not been initialized.
+  Stream<P2pMessage> streamReceivedData() {
+    if (_p2pTransport == null) {
+      throw StateError(
+          'Client: P2P transport is not active. Cannot stream data.');
+    }
+    return _p2pTransport!.receivedMessages;
   }
 
   /// Provides a stream that emits the updated list of connected client IDs
   /// whenever a client connects or disconnects.
   ///
-  /// Returns an empty stream if the P2P transport is not active.
+  /// Throws a [StateError] if the P2P transport is not active.
   Stream<List<String>> streamClientList() {
-    return _p2pTransport?.clientListStream ?? const Stream.empty();
+    if (_p2pTransport == null) {
+      throw StateError(
+          'Client: P2P transport is not active. Cannot stream client list.');
+    }
+    return _p2pTransport!.clientListStream;
   }
 
   /// Sends a message to the connected host via the P2P transport layer.
@@ -670,19 +685,20 @@ class FlutterP2pConnectionClient {
   ///
   /// Returns `true` if the message was sent successfully, `false` otherwise (e.g., not connected).
   /// Throws a [StateError] if the P2P transport is not active or client ID is missing.
-  Future<bool> send(SocketMessagetype type, dynamic payload) async {
+  Future<bool> send(P2pMessageType type, dynamic payload) async {
     final transport = _p2pTransport;
     final clientId = _clientId;
     if (transport == null || !transport.isConnected) {
       debugPrint('Client: P2P transport is not connected. Cannot send data.');
-      return false; // Return false instead of throwing for send failures due to state
-      // throw StateError('Client: P2P transport is not connected. Cannot send data.');
+      throw StateError(
+          'Client: P2P transport is not connected. Cannot send data.');
+      // return false; // Return false instead of throwing for send failures due to state
     }
     if (clientId == null) {
       throw StateError('Client: Client ID is not set. Cannot send data.');
     }
 
-    final message = SocketMessage(
+    final message = P2pMessage(
       senderId: clientId,
       type: type,
       payload: payload,
