@@ -9,13 +9,246 @@ import 'flutter_p2p_connection_platform_interface.dart';
 // Default port for the custom P2P transport layer if not specified otherwise.
 const int _defaultP2pTransportPort = 3434;
 
-/// The [FlutterP2pConnectionHost] class facilitates creating and managing a
+/// The main entry point for the Flutter P2P Connection plugin.
+///
+/// This class provides access to:
+/// - Utility methods for checking and requesting permissions and enabling services
+///   (Location, Wi-Fi, Bluetooth) required for P2P operations.
+/// - Device information like the model.
+class _FlutterP2pConnection {
+  /// Retrieves the model identifier of the current device.
+  ///
+  /// Useful for debugging or tailoring behavior based on the device.
+  ///
+  /// Returns a [Future] completing with the device model string.
+  Future<String> getDeviceModel() =>
+      FlutterP2pConnectionPlatform.instance.getPlatformModel();
+
+  /// Checks if location services are currently enabled on the device.
+  ///
+  /// Location is often required for Wi-Fi and BLE scanning on Android.
+  ///
+  /// Returns a [Future] completing with `true` if location is enabled, `false` otherwise.
+  Future<bool> checkLocationEnabled() async =>
+      await FlutterP2pConnectionPlatform.instance.checkLocationEnabled();
+
+  /// Attempts to guide the user to system settings to enable location services.
+  ///
+  /// This typically opens the device's location settings screen.
+  /// After the user potentially enables the service, it re-checks the status.
+  ///
+  /// Returns a [Future] completing with `true` if location is enabled after the
+  /// attempt, `false` otherwise. Note that the user can choose not to enable it.
+  Future<bool> enableLocationServices() async {
+    await FlutterP2pConnectionPlatform.instance.enableLocationServices();
+    // Re-check status after returning from settings.
+    return await checkLocationEnabled();
+  }
+
+  /// Checks if Wi-Fi is currently enabled on the device.
+  ///
+  /// Wi-Fi is essential for Wi-Fi Direct P2P connections.
+  ///
+  /// Returns a [Future] completing with `true` if Wi-Fi is enabled, `false` otherwise.
+  Future<bool> checkWifiEnabled() async =>
+      await FlutterP2pConnectionPlatform.instance.checkWifiEnabled();
+
+  /// Attempts to guide the user to system settings to enable Wi-Fi.
+  ///
+  /// This typically opens the device's Wi-Fi settings screen.
+  /// After the user potentially enables Wi-Fi, it re-checks the status.
+  ///
+  /// Returns a [Future] completing with `true` if Wi-Fi is enabled after the
+  /// attempt, `false` otherwise.
+  Future<bool> enableWifiServices() async {
+    await FlutterP2pConnectionPlatform.instance.enableWifiServices();
+    // Re-check status after returning from settings.
+    return await checkWifiEnabled();
+  }
+
+  /// Checks if Bluetooth is currently enabled on the device.
+  ///
+  /// Bluetooth is required for BLE discovery (scanning and advertising).
+  ///
+  /// Returns a [Future] completing with `true` if Bluetooth is enabled, `false` otherwise.
+  Future<bool> checkBluetoothEnabled() async =>
+      await FlutterP2pConnectionPlatform.instance.checkBluetoothEnabled();
+
+  /// Attempts to guide the user to system settings to enable Bluetooth.
+  ///
+  /// This typically opens the device's Bluetooth settings screen.
+  /// After the user potentially enables Bluetooth, it re-checks the status.
+  ///
+  /// Returns a [Future] completing with `true` if Bluetooth is enabled after the
+  /// attempt, `false` otherwise.
+  Future<bool> enableBluetoothServices() async {
+    await FlutterP2pConnectionPlatform.instance.enableBluetoothServices();
+    // Re-check status after returning from settings.
+    return await checkBluetoothEnabled();
+  }
+
+  /// Checks if all necessary Bluetooth permissions are granted.
+  ///
+  /// This includes permissions for connecting, scanning, and advertising,
+  /// which vary depending on the Android version. Uses the `permission_handler` package.
+  /// Also checks for Location permission which is often required for BLE scanning.
+  ///
+  /// Returns a [Future] completing with `true` if all required Bluetooth and
+  /// associated Location permissions are granted, `false` otherwise.
+  Future<bool> checkBluetoothPermissions() async {
+    // Permissions required might vary slightly based on Android SDK level.
+    // These cover common BLE operations. Android 12+ requires specific permissions.
+    // Location is generally required for scanning before Android 12, and often
+    // requested alongside BT permissions even on 12+ for reliability.
+    final List<Permission> permissions = [
+      Permission
+          .locationWhenInUse, // Or Permission.location if background scan needed
+      Permission.bluetoothScan, // Needed for discovering devices (Android 12+)
+      Permission
+          .bluetoothConnect, // Needed for connecting to devices (Android 12+)
+      Permission.bluetoothAdvertise, // Needed for advertising (Android 12+)
+    ];
+
+    // On older Android versions, some permissions might not exist or be relevant.
+    // permission_handler usually handles this gracefully (returns PermissionStatus.granted
+    // or restricted/denied based on manifest and OS level).
+
+    for (final perm in permissions) {
+      final status = await perm.status;
+      // Consider .isLimited as potentially sufficient for some use cases (e.g., location)
+      if (!status.isGranted && !status.isLimited) {
+        debugPrint("Permission missing: $perm status: $status");
+        return false; // If any required permission is not granted, return false.
+      }
+    }
+
+    // // Additionally check the basic Bluetooth permission for good measure,
+    // // although the specific ones above are key on newer Android.
+    // if (!(await Permission.bluetooth.status.isGranted)) {
+    //   debugPrint(
+    //       "Permission missing: ${Permission.bluetooth} status: ${await Permission.bluetooth.status}");
+    //   return false;
+    // }
+
+    return true; // All checked permissions are granted.
+  }
+
+  /// Requests necessary Bluetooth and associated Location permissions from the user.
+  ///
+  /// Uses the `permission_handler` package to request permissions for scanning,
+  /// connecting, advertising, and location (often needed for scanning).
+  ///
+  /// Returns a [Future] completing with `true` if all requested permissions
+  /// are granted by the user (or were already granted), `false` otherwise.
+  Future<bool> askBluetoothPermissions() async {
+    // Request all potentially needed permissions at once.
+    // The user will see separate dialogs if multiple are needed.
+    await [
+      Permission.locationWhenInUse, // Request location first or alongside BT
+      Permission
+          .bluetooth, // General Bluetooth permission (might be auto-granted if others are)
+      Permission.bluetoothScan,
+      Permission.bluetoothAdvertise,
+      Permission.bluetoothConnect,
+    ].request();
+
+    // After requesting, check if they were actually granted.
+    return await checkBluetoothPermissions();
+  }
+
+  /// Checks if all necessary P2P (Wi-Fi Direct) permissions are granted.
+  ///
+  /// This typically includes permissions like `NEARBY_WIFI_DEVICES` (Android 13+),
+  /// `ACCESS_FINE_LOCATION` (required for Wi-Fi scanning/discovery), and potentially
+  /// `CHANGE_WIFI_STATE`. The exact check is handled by the platform implementation.
+  ///
+  /// Returns a [Future] completing with `true` if all required P2P permissions
+  /// are granted, `false` otherwise.
+  Future<bool> checkP2pPermissions() async =>
+      await FlutterP2pConnectionPlatform.instance.checkP2pPermissions();
+
+  /// Requests necessary P2P (Wi-Fi Direct) permissions from the user.
+  ///
+  /// This triggers the platform-specific permission request dialogs for permissions
+  /// like `NEARBY_WIFI_DEVICES`, `ACCESS_FINE_LOCATION`, etc.
+  ///
+  /// Returns a [Future] completing with `true` if the permissions are granted
+  /// after the request (or were already granted), `false` otherwise.
+  Future<bool> askP2pPermissions() async {
+    await FlutterP2pConnectionPlatform.instance.askP2pPermissions();
+    // Re-check status after the request dialog.
+    return await checkP2pPermissions();
+  }
+
+  /// Checks if the necessary storage permissions are granted for file transfer.
+  ///
+  /// **Note:** Storage permission requirements have changed significantly in recent
+  /// Android versions (Scoped Storage from Android 10/11, stricter rules in 13+).
+  /// Relying on `Permission.storage` is often insufficient or incorrect on modern Android.
+  ///
+  /// Consider using platform-specific file pickers (`file_picker` package) or
+  /// MediaStore APIs instead of requesting broad storage permissions.
+  /// This method provides a basic check for older compatibility but might need
+  /// adjustment based on your specific file access needs and target Android SDK.
+  ///
+  /// Returns a [Future] completing with `true` if `Permission.storage` is granted,
+  /// `false` otherwise. This might not reflect the actual ability to read/write
+  /// all files on newer Android versions.
+  Future<bool> checkStoragePermission() async {
+    // On Android 13+, direct external storage access is highly restricted.
+    // Checking Permission.storage might not be the right approach.
+    // Consider checking specific media permissions (photos, videos, audio) if applicable.
+    // Or using MANAGE_EXTERNAL_STORAGE (requires special Play Store approval).
+
+    // Basic check for Permission.storage:
+    if (await Permission.storage.isGranted) {
+      return true;
+    }
+
+    // Example check for media permissions (Android 13+):
+    // if (await Permission.photos.isGranted || await Permission.videos.isGranted || await Permission.audio.isGranted) {
+    //   // If any media permission is granted, maybe that's sufficient? Depends on use case.
+    //   return true;
+    // }
+
+    return false;
+  }
+
+  /// Requests storage permission(s) from the user, primarily for file transfer.
+  ///
+  /// Uses the `permission_handler` package. See notes in [checkStoragePermission]
+  /// regarding changes in Android storage permissions and the recommended alternatives.
+  ///
+  /// This method requests the basic `Permission.storage`. Adapt as needed for
+  /// Scoped Storage or specific media permissions.
+  ///
+  /// Returns a [Future] completing with `true` if `Permission.storage` is granted
+  /// after the request, `false` otherwise.
+  Future<bool> askStoragePermission() async {
+    // Request basic storage permission.
+    // On Android 11+, this might grant limited access or prompt for specific folder access.
+    // On Android 13+, this might have little effect without MANAGE_EXTERNAL_STORAGE.
+    final status = await Permission.storage.request();
+
+    // Example for requesting media permissions on Android 13+:
+    // Map<Permission, PermissionStatus> statuses = await [
+    //   Permission.photos,
+    //   Permission.videos,
+    //   Permission.audio, // Request permissions relevant to your app
+    // ].request();
+    // return statuses.values.any((status) => status.isGranted); // Return true if any media permission granted
+
+    return status.isGranted;
+  }
+}
+
+/// The [FlutterP2pHost] class facilitates creating and managing a
 /// Wi-Fi Direct group (acting as a hotspot host) for P2P connections.
 ///
 /// It allows initializing the host, creating a group (optionally advertising
 /// credentials via BLE), removing the group, listening for state changes,
 /// and sending/receiving data via the underlying [P2pTransportHost].
-class FlutterP2pConnectionHost {
+class FlutterP2pHost extends _FlutterP2pConnection {
   // Internal state flags
   bool _isGroupCreated = false;
   bool _isBleAdvertising = false;
@@ -46,7 +279,7 @@ class FlutterP2pConnectionHost {
     // Ensure the group is removed (which stops transport) before disposing platform resources.
     await removeGroup().catchError((_) => null);
     await FlutterP2pConnectionPlatform.instance.dispose();
-    debugPrint("FlutterP2pConnectionHost disposed.");
+    debugPrint("FlutterP2pHost disposed.");
   }
 
   /// Creates a Wi-Fi Direct group (hotspot) for P2P connections and starts the transport layer.
@@ -196,19 +429,6 @@ class FlutterP2pConnectionHost {
     return FlutterP2pConnectionPlatform.instance.streamHotspotInfo();
   }
 
-  /// Provides a stream of messages received from connected clients via the P2P transport layer.
-  ///
-  /// This stream emits [P2pMessage] objects received from any connected client.
-  ///
-  /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
-  Stream<P2pMessage> streamReceivedMessages() {
-    if (_p2pTransport == null) {
-      throw StateError(
-          'Host: P2P transport is not active. Cannot stream data.');
-    }
-    return _p2pTransport!.receivedMessages;
-  }
-
   /// Provides a stream that emits the updated list of connected [P2pClientInfo]s
   /// whenever a client connects or disconnects.
   ///
@@ -221,14 +441,40 @@ class FlutterP2pConnectionHost {
     return _p2pTransport!.clientListStream;
   }
 
-  /// Broadcasts a [P2pMessage] to all connected clients.
+  /// Provides a stream of strings received from connected clients via the P2P transport layer.
   ///
-  /// - [message]: The [P2pMessage] to send. The `senderId` should typically be set
-  ///              to identify the host (e.g., 'server' or a host-specific ID).
-  /// - [excludeClientId]: Optional ID of a client to exclude from the broadcast.
+  /// This stream emits [String]s received from any connected client.
+  ///
+  /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
+  Stream<String> streamReceivedTextMessages() {
+    if (_p2pTransport == null) {
+      throw StateError(
+          'Host: P2P transport is not active. Cannot stream data.');
+    }
+    return _p2pTransport!.receivedTextMessagesStream;
+  }
+
+  // /// Provides a stream of stream messages received from connected clients via the P2P transport layer.
+  // ///
+  // /// This stream emits [String] objects received from any connected client.
+  // ///
+  // /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
+  // Stream<String> streamReceivedStreamMessages() {
+  //   if (_p2pTransport == null) {
+  //     throw StateError(
+  //         'Host: P2P transport is not active. Cannot stream data.');
+  //   }
+  //   return _p2pTransport!.receivedTextMessagesStream;
+  // }
+
+  /// Broadcasts a [String] to all connected clients.
+  ///
+  /// - [message]: The [String] to send.
+  /// - [excludeClientIds]: Optional IDs of clients to exclude from the broadcast.
   ///
   /// Throws a [StateError] if the P2P transport is not active.
-  Future<void> broadcast(P2pMessage message, {String? excludeClientId}) async {
+  Future<void> broadcastText(String payload,
+      {List<String>? excludeClientIds}) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
       // Check if server is running
@@ -236,18 +482,22 @@ class FlutterP2pConnectionHost {
           'Host: P2P transport is not active. Cannot broadcast. Ensure createGroup() was called successfully.');
     }
     // Delegate broadcasting to the transport layer instance.
-    await transport.broadcast(message, excludeClientId: excludeClientId);
+    var message = P2pMessage(
+      senderId: transport.hostId,
+      type: P2pMessageType.text,
+      payload: payload,
+    );
+    await transport.broadcast(message, excludeClientIds: excludeClientIds);
   }
 
-  /// Sends a [P2pMessage] to a specific client.
+  /// Sends a [String] to a specific client.
   ///
-  /// - [clientId]: The ID of the target client (obtained from `streamClientList` or message `senderId`).
-  /// - [message]: The [P2pMessage] to send. The `senderId` should typically be set
-  ///              to identify the host (e.g., 'server' or a host-specific ID).
+  /// - [clientId]: The ID of the target client (obtained from `streamClientList`).
+  /// - [payload]: The [String] to send.
   ///
   /// Returns `true` if the client was found and message was sent, `false` otherwise.
   /// Throws a [StateError] if the P2P transport is not active.
-  Future<bool> sendToClient(String clientId, P2pMessage message) async {
+  Future<bool> sendTextToClient(String clientId, String payload) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
       // Check if server is running
@@ -255,24 +505,27 @@ class FlutterP2pConnectionHost {
           'Host: P2P transport is not active. Cannot send. Ensure createGroup() was called successfully.');
     }
     // Delegate sending to the transport layer instance.
+    var message = P2pMessage(
+      senderId: transport.hostId,
+      type: P2pMessageType.text,
+      payload: payload,
+    );
     return await transport.sendToClient(clientId, message);
   }
 }
 
-/// The [FlutterP2pConnectionClient] class facilitates discovering and connecting
+/// The [FlutterP2pClient] class facilitates discovering and connecting
 /// to a P2P host (Wi-Fi Direct group).
 ///
 /// It allows initializing the client, scanning for hosts via BLE, connecting
 /// to a discovered host (either via BLE data exchange or directly with credentials),
 /// disconnecting, listening for connection state changes, and sending/receiving
 /// data via the underlying [P2pTransportClient].
-class FlutterP2pConnectionClient {
+class FlutterP2pClient extends _FlutterP2pConnection {
   // Internal state flag
   bool _isScanning = false;
   // Instance of the transport layer handler for the client.
   P2pTransportClient? _p2pTransport;
-  // Store own client ID if needed, e.g., for sending messages
-  String? _clientId; // Could be set based on device info or assigned by server
 
   /// Returns `true` if the client is currently scanning for BLE devices.
   bool get isScanning => _isScanning;
@@ -285,8 +538,6 @@ class FlutterP2pConnectionClient {
   /// This method must be called before any other client operations.
   /// It prepares the underlying platform-specific components.
   Future<void> initialize({String? clientId}) async {
-    _clientId = clientId ??
-        "client_${DateTime.now().millisecondsSinceEpoch}"; // Example client ID
     await _p2pTransport?.dispose(); // Dispose previous transport if any
     _p2pTransport = null; // Ensure transport is reset on initialize
     await FlutterP2pConnectionPlatform.instance.initialize();
@@ -306,7 +557,7 @@ class FlutterP2pConnectionClient {
     await _p2pTransport?.dispose().catchError((_) => null);
     _p2pTransport = null;
     await FlutterP2pConnectionPlatform.instance.dispose();
-    debugPrint("FlutterP2pConnectionClient disposed.");
+    debugPrint("FlutterP2pClient disposed.");
   }
 
   /// Starts scanning for nearby BLE devices advertising P2P host credentials.
@@ -644,19 +895,6 @@ class FlutterP2pConnectionClient {
     return FlutterP2pConnectionPlatform.instance.streamHotspotClientState();
   }
 
-  /// Provides a stream of messages received from the host via the P2P transport layer.
-  ///
-  /// This stream emits [P2pMessage] objects received from the connected host.
-  ///
-  /// Throws a [StateError] if the P2P transport is not active or has not been initialized.
-  Stream<P2pMessage> streamReceivedMessages() {
-    if (_p2pTransport == null) {
-      throw StateError(
-          'Client: P2P transport is not active. Cannot stream data.');
-    }
-    return _p2pTransport!.receivedMessages;
-  }
-
   /// Provides a stream that emits the updated list of connected [P2pClientInfo]s
   /// whenever a client connects or disconnects.
   ///
@@ -669,280 +907,88 @@ class FlutterP2pConnectionClient {
     return _p2pTransport!.clientListStream;
   }
 
-  /// Sends a message to the connected host via the P2P transport layer.
+  /// Provides a stream of strings received from connected clients via the P2P transport layer.
   ///
-  /// - [type]: An application-defined string indicating the message type (e.g., 'chat', 'command').
-  /// - [payload]: The data to send. Must be JSON-encodable.
+  /// This stream emits [String]s received from any connected client.
   ///
-  /// Automatically sets the `senderId` based on the client's ID.
+  /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
+  Stream<String> streamReceivedTextMessages() {
+    if (_p2pTransport == null) {
+      throw StateError(
+          'Host: P2P transport is not active. Cannot stream data.');
+    }
+    return _p2pTransport!.receivedTextMessagesStream;
+  }
+
+  // /// Provides a stream of stream messages received from connected clients via the P2P transport layer.
+  // ///
+  // /// This stream emits [String] objects received from any connected client.
+  // ///
+  // /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
+  // Stream<String> streamReceivedStreamMessages() {
+  //   if (_p2pTransport == null) {
+  //     throw StateError(
+  //         'Host: P2P transport is not active. Cannot stream data.');
+  //   }
+  //   return _p2pTransport!.receivedStringMessagesStream;
+  // }
+
+  /// Broadcasts a [String] to all connected clients.
   ///
-  /// Returns `true` if the message was sent successfully, `false` otherwise (e.g., not connected).
-  /// Throws a [StateError] if the P2P transport is not active or client ID is missing.
-  Future<bool> send(P2pMessageType type, dynamic payload) async {
+  /// - [message]: The [String] to send.
+  /// - [excludeClientId]: Optional ID of a client to exclude from the broadcast.
+  ///
+  /// Throws a [StateError] if the P2P transport is not active.
+  Future<void> broadcastText(
+    String payload, {
+    String? excludeClientId,
+  }) async {
     final transport = _p2pTransport;
-    final clientId = _clientId;
+    // Check if transport is running
     if (transport == null || !transport.isConnected) {
       debugPrint('Client: P2P transport is not connected. Cannot send data.');
       throw StateError(
           'Client: P2P transport is not connected. Cannot send data.');
-      // return false; // Return false instead of throwing for send failures due to state
     }
-    if (clientId == null) {
-      throw StateError('Client: Client ID is not set. Cannot send data.');
-    }
-
-    final message = P2pMessage(
-      senderId: clientId,
-      type: type,
+    // Delegate broadcasting to the transport layer instance.
+    var message = P2pMessage(
+      senderId: transport.clientId,
+      type: P2pMessageType.text,
       payload: payload,
+      // Specify the clients that'll receive the message
+      clients: transport.clientList
+          .where((client) => client.id != excludeClientId)
+          .toList(),
     );
+    await transport.send(message);
+  }
 
+  /// Sends a [String] to a specific client.
+  ///
+  /// - [clientId]: The ID of the target client (obtained from `streamClientList`).
+  /// - [payload]: The [String] to send.
+  ///
+  /// Returns `true` if the client was found and message was sent, `false` otherwise.
+  /// Throws a [StateError] if the P2P transport is not active.
+  Future<bool> sendTextToClient(String clientId, String payload) async {
+    final transport = _p2pTransport;
+    // Check if transport is running
+    if (transport == null || !transport.isConnected) {
+      debugPrint('Client: P2P transport is not connected. Cannot send data.');
+      throw StateError(
+          'Client: P2P transport is not connected. Cannot send data.');
+    }
     // Delegate sending to the transport layer instance.
+    var message = P2pMessage(
+      senderId: transport.clientId,
+      type: P2pMessageType.text,
+      payload: payload,
+      // Specify the clients that'll receive the message
+      clients: transport.clientList
+          .where((client) => client.id == clientId)
+          .toList(),
+    );
     return await transport.send(message);
-  }
-}
-
-// ... (FlutterP2pConnection class and State/Data classes remain largely the same)
-// Minor updates to state/data classes for consistency (hashCode, toString)
-
-/// The main entry point for the Flutter P2P Connection plugin.
-///
-/// This class provides access to:
-/// - Host functionality via the [host] property ([FlutterP2pConnectionHost]).
-/// - Client functionality via the [client] property ([FlutterP2pConnectionClient]).
-/// - Utility methods for checking and requesting permissions and enabling services
-///   (Location, Wi-Fi, Bluetooth) required for P2P operations.
-/// - Device information like the model.
-class FlutterP2pConnection {
-  /// Provides access to host-specific P2P operations.
-  final FlutterP2pConnectionHost host = FlutterP2pConnectionHost();
-
-  /// Provides access to client-specific P2P operations.
-  final FlutterP2pConnectionClient client = FlutterP2pConnectionClient();
-
-  /// Retrieves the model identifier of the current device.
-  ///
-  /// Useful for debugging or tailoring behavior based on the device.
-  ///
-  /// Returns a [Future] completing with the device model string.
-  Future<String> getDeviceModel() =>
-      FlutterP2pConnectionPlatform.instance.getPlatformModel();
-
-  /// Checks if location services are currently enabled on the device.
-  ///
-  /// Location is often required for Wi-Fi and BLE scanning on Android.
-  ///
-  /// Returns a [Future] completing with `true` if location is enabled, `false` otherwise.
-  Future<bool> checkLocationEnabled() async =>
-      await FlutterP2pConnectionPlatform.instance.checkLocationEnabled();
-
-  /// Attempts to guide the user to system settings to enable location services.
-  ///
-  /// This typically opens the device's location settings screen.
-  /// After the user potentially enables the service, it re-checks the status.
-  ///
-  /// Returns a [Future] completing with `true` if location is enabled after the
-  /// attempt, `false` otherwise. Note that the user can choose not to enable it.
-  Future<bool> enableLocationServices() async {
-    await FlutterP2pConnectionPlatform.instance.enableLocationServices();
-    // Re-check status after returning from settings.
-    return await checkLocationEnabled();
-  }
-
-  /// Checks if Wi-Fi is currently enabled on the device.
-  ///
-  /// Wi-Fi is essential for Wi-Fi Direct P2P connections.
-  ///
-  /// Returns a [Future] completing with `true` if Wi-Fi is enabled, `false` otherwise.
-  Future<bool> checkWifiEnabled() async =>
-      await FlutterP2pConnectionPlatform.instance.checkWifiEnabled();
-
-  /// Attempts to guide the user to system settings to enable Wi-Fi.
-  ///
-  /// This typically opens the device's Wi-Fi settings screen.
-  /// After the user potentially enables Wi-Fi, it re-checks the status.
-  ///
-  /// Returns a [Future] completing with `true` if Wi-Fi is enabled after the
-  /// attempt, `false` otherwise.
-  Future<bool> enableWifiServices() async {
-    await FlutterP2pConnectionPlatform.instance.enableWifiServices();
-    // Re-check status after returning from settings.
-    return await checkWifiEnabled();
-  }
-
-  /// Checks if Bluetooth is currently enabled on the device.
-  ///
-  /// Bluetooth is required for BLE discovery (scanning and advertising).
-  ///
-  /// Returns a [Future] completing with `true` if Bluetooth is enabled, `false` otherwise.
-  Future<bool> checkBluetoothEnabled() async =>
-      await FlutterP2pConnectionPlatform.instance.checkBluetoothEnabled();
-
-  /// Attempts to guide the user to system settings to enable Bluetooth.
-  ///
-  /// This typically opens the device's Bluetooth settings screen.
-  /// After the user potentially enables Bluetooth, it re-checks the status.
-  ///
-  /// Returns a [Future] completing with `true` if Bluetooth is enabled after the
-  /// attempt, `false` otherwise.
-  Future<bool> enableBluetoothServices() async {
-    await FlutterP2pConnectionPlatform.instance.enableBluetoothServices();
-    // Re-check status after returning from settings.
-    return await checkBluetoothEnabled();
-  }
-
-  /// Checks if all necessary Bluetooth permissions are granted.
-  ///
-  /// This includes permissions for connecting, scanning, and advertising,
-  /// which vary depending on the Android version. Uses the `permission_handler` package.
-  /// Also checks for Location permission which is often required for BLE scanning.
-  ///
-  /// Returns a [Future] completing with `true` if all required Bluetooth and
-  /// associated Location permissions are granted, `false` otherwise.
-  Future<bool> checkBluetoothPermissions() async {
-    // Permissions required might vary slightly based on Android SDK level.
-    // These cover common BLE operations. Android 12+ requires specific permissions.
-    // Location is generally required for scanning before Android 12, and often
-    // requested alongside BT permissions even on 12+ for reliability.
-    final List<Permission> permissions = [
-      Permission
-          .locationWhenInUse, // Or Permission.location if background scan needed
-      Permission.bluetoothScan, // Needed for discovering devices (Android 12+)
-      Permission
-          .bluetoothConnect, // Needed for connecting to devices (Android 12+)
-      Permission.bluetoothAdvertise, // Needed for advertising (Android 12+)
-    ];
-
-    // On older Android versions, some permissions might not exist or be relevant.
-    // permission_handler usually handles this gracefully (returns PermissionStatus.granted
-    // or restricted/denied based on manifest and OS level).
-
-    for (final perm in permissions) {
-      final status = await perm.status;
-      // Consider .isLimited as potentially sufficient for some use cases (e.g., location)
-      if (!status.isGranted && !status.isLimited) {
-        debugPrint("Permission missing: $perm status: $status");
-        return false; // If any required permission is not granted, return false.
-      }
-    }
-
-    // // Additionally check the basic Bluetooth permission for good measure,
-    // // although the specific ones above are key on newer Android.
-    // if (!(await Permission.bluetooth.status.isGranted)) {
-    //   debugPrint(
-    //       "Permission missing: ${Permission.bluetooth} status: ${await Permission.bluetooth.status}");
-    //   return false;
-    // }
-
-    return true; // All checked permissions are granted.
-  }
-
-  /// Requests necessary Bluetooth and associated Location permissions from the user.
-  ///
-  /// Uses the `permission_handler` package to request permissions for scanning,
-  /// connecting, advertising, and location (often needed for scanning).
-  ///
-  /// Returns a [Future] completing with `true` if all requested permissions
-  /// are granted by the user (or were already granted), `false` otherwise.
-  Future<bool> askBluetoothPermissions() async {
-    // Request all potentially needed permissions at once.
-    // The user will see separate dialogs if multiple are needed.
-    await [
-      Permission.locationWhenInUse, // Request location first or alongside BT
-      Permission
-          .bluetooth, // General Bluetooth permission (might be auto-granted if others are)
-      Permission.bluetoothScan,
-      Permission.bluetoothAdvertise,
-      Permission.bluetoothConnect,
-    ].request();
-
-    // After requesting, check if they were actually granted.
-    return await checkBluetoothPermissions();
-  }
-
-  /// Checks if all necessary P2P (Wi-Fi Direct) permissions are granted.
-  ///
-  /// This typically includes permissions like `NEARBY_WIFI_DEVICES` (Android 13+),
-  /// `ACCESS_FINE_LOCATION` (required for Wi-Fi scanning/discovery), and potentially
-  /// `CHANGE_WIFI_STATE`. The exact check is handled by the platform implementation.
-  ///
-  /// Returns a [Future] completing with `true` if all required P2P permissions
-  /// are granted, `false` otherwise.
-  Future<bool> checkP2pPermissions() async =>
-      await FlutterP2pConnectionPlatform.instance.checkP2pPermissions();
-
-  /// Requests necessary P2P (Wi-Fi Direct) permissions from the user.
-  ///
-  /// This triggers the platform-specific permission request dialogs for permissions
-  /// like `NEARBY_WIFI_DEVICES`, `ACCESS_FINE_LOCATION`, etc.
-  ///
-  /// Returns a [Future] completing with `true` if the permissions are granted
-  /// after the request (or were already granted), `false` otherwise.
-  Future<bool> askP2pPermissions() async {
-    await FlutterP2pConnectionPlatform.instance.askP2pPermissions();
-    // Re-check status after the request dialog.
-    return await checkP2pPermissions();
-  }
-
-  /// Checks if the necessary storage permissions are granted for file transfer.
-  ///
-  /// **Note:** Storage permission requirements have changed significantly in recent
-  /// Android versions (Scoped Storage from Android 10/11, stricter rules in 13+).
-  /// Relying on `Permission.storage` is often insufficient or incorrect on modern Android.
-  ///
-  /// Consider using platform-specific file pickers (`file_picker` package) or
-  /// MediaStore APIs instead of requesting broad storage permissions.
-  /// This method provides a basic check for older compatibility but might need
-  /// adjustment based on your specific file access needs and target Android SDK.
-  ///
-  /// Returns a [Future] completing with `true` if `Permission.storage` is granted,
-  /// `false` otherwise. This might not reflect the actual ability to read/write
-  /// all files on newer Android versions.
-  Future<bool> checkStoragePermission() async {
-    // On Android 13+, direct external storage access is highly restricted.
-    // Checking Permission.storage might not be the right approach.
-    // Consider checking specific media permissions (photos, videos, audio) if applicable.
-    // Or using MANAGE_EXTERNAL_STORAGE (requires special Play Store approval).
-
-    // Basic check for Permission.storage:
-    if (await Permission.storage.isGranted) {
-      return true;
-    }
-
-    // Example check for media permissions (Android 13+):
-    // if (await Permission.photos.isGranted || await Permission.videos.isGranted || await Permission.audio.isGranted) {
-    //   // If any media permission is granted, maybe that's sufficient? Depends on use case.
-    //   return true;
-    // }
-
-    return false;
-  }
-
-  /// Requests storage permission(s) from the user, primarily for file transfer.
-  ///
-  /// Uses the `permission_handler` package. See notes in [checkStoragePermission]
-  /// regarding changes in Android storage permissions and the recommended alternatives.
-  ///
-  /// This method requests the basic `Permission.storage`. Adapt as needed for
-  /// Scoped Storage or specific media permissions.
-  ///
-  /// Returns a [Future] completing with `true` if `Permission.storage` is granted
-  /// after the request, `false` otherwise.
-  Future<bool> askStoragePermission() async {
-    // Request basic storage permission.
-    // On Android 11+, this might grant limited access or prompt for specific folder access.
-    // On Android 13+, this might have little effect without MANAGE_EXTERNAL_STORAGE.
-    final status = await Permission.storage.request();
-
-    // Example for requesting media permissions on Android 13+:
-    // Map<Permission, PermissionStatus> statuses = await [
-    //   Permission.photos,
-    //   Permission.videos,
-    //   Permission.audio, // Request permissions relevant to your app
-    // ].request();
-    // return statuses.values.any((status) => status.isGranted); // Return true if any media permission granted
-
-    return status.isGranted;
   }
 }
 
@@ -1233,7 +1279,7 @@ class BleDiscoveredDevice {
 
 /// Represents data received from a connected BLE device via a characteristic.
 ///
-/// Used internally during the [FlutterP2pConnectionClient.connectWithDevice] process.
+/// Used internally during the [FlutterP2pClient.connectWithDevice] process.
 @immutable
 class BleReceivedData {
   /// The MAC address of the BLE device from which data was received.

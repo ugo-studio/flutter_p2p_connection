@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print
-
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection_example/client.dart';
 import 'package:flutter_p2p_connection_example/host.dart';

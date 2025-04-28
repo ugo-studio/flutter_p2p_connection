@@ -14,11 +14,11 @@ class HostPage extends StatefulWidget {
 
 class _HostPageState extends State<HostPage> {
   final TextEditingController textEditingController = TextEditingController();
-  late FlutterP2pConnection p2p;
+  late FlutterP2pHost p2p;
 
   StreamSubscription<HotspotHostState>? hotspotStateSubscription;
   StreamSubscription<List<P2pClientInfo>>? clientListStream;
-  StreamSubscription<P2pMessage>? messageStream;
+  StreamSubscription<String>? textMessageStream;
 
   HotspotHostState? hotspotState;
   List<P2pClientInfo> clientList = [];
@@ -27,9 +27,9 @@ class _HostPageState extends State<HostPage> {
   void initState() {
     super.initState();
 
-    p2p = FlutterP2pConnection();
-    p2p.host.initialize().whenComplete(() {
-      hotspotStateSubscription = p2p.host.streamHotspotState().listen((state) {
+    p2p = FlutterP2pHost();
+    p2p.initialize().whenComplete(() {
+      hotspotStateSubscription = p2p.streamHotspotState().listen((state) {
         setState(() {
           hotspotState = state;
         });
@@ -39,11 +39,11 @@ class _HostPageState extends State<HostPage> {
 
   @override
   void dispose() {
-    p2p.host.dispose();
+    p2p.dispose();
     textEditingController.dispose();
     hotspotStateSubscription?.cancel();
     clientListStream?.cancel();
-    messageStream?.cancel();
+    textMessageStream?.cancel();
     super.dispose();
   }
 
@@ -83,14 +83,14 @@ class _HostPageState extends State<HostPage> {
 
   void createGroup() async {
     try {
-      await p2p.host.createGroup();
-      clientListStream = p2p.host.streamClientList().listen((list) {
+      await p2p.createGroup();
+      clientListStream = p2p.streamClientList().listen((list) {
         setState(() {
           clientList = list;
         });
       });
-      messageStream = p2p.client.streamReceivedMessages().listen((data) {
-        if (data.type == P2pMessageType.chat) snack(data.payload);
+      textMessageStream = p2p.streamReceivedTextMessages().listen((data) {
+        snack('Received message: $data');
       });
       snack("created group");
     } catch (e) {
@@ -102,7 +102,7 @@ class _HostPageState extends State<HostPage> {
   void removeGroup() async {
     try {
       clientListStream?.cancel();
-      await p2p.host.removeGroup();
+      await p2p.removeGroup();
       snack("removed group");
     } catch (e) {
       snack("failed to remove group: $e");
@@ -122,11 +122,10 @@ class _HostPageState extends State<HostPage> {
   }
 
   void sendMessage() async {
-    var message = textEditingController.text;
-    if (message.isEmpty) return;
-
-    await p2p.host.broadcast(P2pMessage(
-        senderId: "senderId", type: P2pMessageType.chat, payload: "payload"));
+    var text = textEditingController.text;
+    if (text.isNotEmpty) {
+      await p2p.broadcastText(text);
+    }
   }
 
   @override
@@ -164,7 +163,7 @@ class _HostPageState extends State<HostPage> {
               const SizedBox(height: 30),
 
               // hotspot services
-              p2p.host.isGroupCreated
+              p2p.isGroupCreated
                   ? ElevatedButton(
                       onPressed: removeGroup,
                       child: const Text(
@@ -182,7 +181,7 @@ class _HostPageState extends State<HostPage> {
               const SizedBox(height: 30),
 
               // hotspot creds share methods
-              p2p.host.isGroupCreated
+              p2p.isGroupCreated
                   ? ElevatedButton(
                       onPressed: shareHotspotWithQrcode,
                       child: const Text(

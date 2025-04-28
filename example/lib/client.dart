@@ -14,11 +14,11 @@ class ClientPage extends StatefulWidget {
 
 class _ClientPageState extends State<ClientPage> {
   final TextEditingController textEditingController = TextEditingController();
-  late FlutterP2pConnection p2p;
+  late FlutterP2pClient p2p;
 
   StreamSubscription<HotspotClientState>? hotspotStateSubscription;
   StreamSubscription<List<P2pClientInfo>>? clientListStream;
-  StreamSubscription<P2pMessage>? messageStream;
+  StreamSubscription<String>? textMessageStream;
 
   HotspotClientState? hotspotState;
   List<BleDiscoveredDevice> discoveredDevices = [];
@@ -28,10 +28,9 @@ class _ClientPageState extends State<ClientPage> {
   void initState() {
     super.initState();
 
-    p2p = FlutterP2pConnection();
-    p2p.client.initialize().whenComplete(() {
-      hotspotStateSubscription =
-          p2p.client.streamHotspotState().listen((state) {
+    p2p = FlutterP2pClient();
+    p2p.initialize().whenComplete(() {
+      hotspotStateSubscription = p2p.streamHotspotState().listen((state) {
         setState(() {
           hotspotState = state;
         });
@@ -41,11 +40,11 @@ class _ClientPageState extends State<ClientPage> {
 
   @override
   void dispose() {
-    p2p.client.dispose();
+    p2p.dispose();
     textEditingController.dispose();
     hotspotStateSubscription?.cancel();
     clientListStream?.cancel();
-    messageStream?.cancel();
+    textMessageStream?.cancel();
     super.dispose();
   }
 
@@ -84,7 +83,7 @@ class _ClientPageState extends State<ClientPage> {
   }
 
   void startPeerDiscovery() async {
-    await p2p.client.startScan((devices) {
+    await p2p.startScan((devices) {
       setState(() {
         discoveredDevices = devices;
       });
@@ -94,17 +93,16 @@ class _ClientPageState extends State<ClientPage> {
 
   void connectWithDevice(int index) async {
     var device = discoveredDevices[index];
-    await p2p.client.connectWithDevice(device);
-    clientListStream = p2p.client.streamClientList().listen((list) {
+    await p2p.connectWithDevice(device);
+    clientListStream = p2p.streamClientList().listen((list) {
       setState(() {
         clientList = list;
       });
     });
-    messageStream = p2p.client.streamReceivedMessages().listen((data) {
-      if (data.type == P2pMessageType.chat) snack(data.payload);
+    textMessageStream = p2p.streamReceivedTextMessages().listen((data) {
+      snack('Received message: $data');
     });
     snack('connected to ${device.deviceAddress}');
-
     setState(() {
       discoveredDevices.clear();
     });
@@ -112,11 +110,14 @@ class _ClientPageState extends State<ClientPage> {
 
   void connectWithCredentials(ssid, preSharedKey) async {
     try {
-      await p2p.client.connectWithCredentials(ssid, preSharedKey);
-      clientListStream = p2p.client.streamClientList().listen((list) {
+      await p2p.connectWithCredentials(ssid, preSharedKey);
+      clientListStream = p2p.streamClientList().listen((list) {
         setState(() {
           clientList = list;
         });
+      });
+      textMessageStream = p2p.streamReceivedTextMessages().listen((data) {
+        snack('Received message: $data');
       });
       snack("connected");
     } catch (e) {
@@ -126,15 +127,14 @@ class _ClientPageState extends State<ClientPage> {
 
   void disconnect() async {
     clientListStream?.cancel();
-    await p2p.client.disconnect();
+    await p2p.disconnect();
     snack("disconnected");
   }
 
   void sendMessage() async {
-    var message = textEditingController.text;
-    if (message.isEmpty) return;
-
-    await p2p.client.send(P2pMessageType.chat, "payload");
+    var text = textEditingController.text;
+    if (text.isEmpty) return;
+    await p2p.broadcastText(text);
   }
 
   @override
