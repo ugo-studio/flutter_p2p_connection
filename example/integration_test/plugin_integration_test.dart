@@ -15,7 +15,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('getDeviceModel test', (WidgetTester tester) async {
-    final FlutterP2pConnection plugin = FlutterP2pConnection();
+    final FlutterP2pClient plugin = FlutterP2pClient();
     final String version = await plugin.getDeviceModel();
     // The version string depends on the host platform running the test, so
     // just assert that some non-empty string is returned.

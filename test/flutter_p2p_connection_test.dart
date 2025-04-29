@@ -23,7 +23,7 @@ void main() {
   });
 
   test('getDeviceModel', () async {
-    FlutterP2pConnection flutterP2pConnectionPlugin = FlutterP2pConnection();
+    FlutterP2pClient flutterP2pConnectionPlugin = FlutterP2pClient();
     MockFlutterP2pConnectionPlatform fakePlatform =
         MockFlutterP2pConnectionPlatform();
     FlutterP2pConnectionPlatform.instance = fakePlatform;
