@@ -18,7 +18,7 @@ class _ClientPageState extends State<ClientPage> {
 
   StreamSubscription<HotspotClientState>? hotspotStateSubscription;
   StreamSubscription<List<P2pClientInfo>>? clientListStream;
-  StreamSubscription<String>? textMessageStream;
+  StreamSubscription<P2pMessagePayload>? payloadsStream;
 
   HotspotClientState? hotspotState;
   List<BleDiscoveredDevice> discoveredDevices = [];
@@ -44,7 +44,7 @@ class _ClientPageState extends State<ClientPage> {
     textEditingController.dispose();
     hotspotStateSubscription?.cancel();
     clientListStream?.cancel();
-    textMessageStream?.cancel();
+    payloadsStream?.cancel();
     super.dispose();
   }
 
@@ -94,14 +94,8 @@ class _ClientPageState extends State<ClientPage> {
   void connectWithDevice(int index) async {
     var device = discoveredDevices[index];
     await p2p.connectWithDevice(device);
-    clientListStream = p2p.streamClientList().listen((list) {
-      setState(() {
-        clientList = list;
-      });
-    });
-    textMessageStream = p2p.streamReceivedTextMessages().listen((data) {
-      snack('Received message: $data');
-    });
+    streamClientList();
+    streamReceivedPayloads();
     snack('connected to ${device.deviceAddress}');
     setState(() {
       discoveredDevices.clear();
@@ -111,18 +105,28 @@ class _ClientPageState extends State<ClientPage> {
   void connectWithCredentials(ssid, preSharedKey) async {
     try {
       await p2p.connectWithCredentials(ssid, preSharedKey);
-      clientListStream = p2p.streamClientList().listen((list) {
-        setState(() {
-          clientList = list;
-        });
-      });
-      textMessageStream = p2p.streamReceivedTextMessages().listen((data) {
-        snack('Received message: $data');
-      });
+      streamClientList();
+      streamReceivedPayloads();
       snack("connected");
     } catch (e) {
       snack("failed to connect: $e");
     }
+  }
+
+  void streamClientList() {
+    clientListStream = p2p.streamClientList().listen((list) {
+      setState(() {
+        clientList = list;
+      });
+    });
+  }
+
+  void streamReceivedPayloads() {
+    payloadsStream = p2p.streamReceivedPayloads().listen((payload) {
+      if (payload.text.isNotEmpty) {
+        snack('Received message: ${payload.text}');
+      }
+    });
   }
 
   void disconnect() async {

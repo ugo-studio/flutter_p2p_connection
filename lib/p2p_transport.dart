@@ -6,8 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart'; // For debugPrint
 
 enum P2pMessageType {
-  text,
-  file,
+  payload,
   clientList,
   unknown,
 }
@@ -55,21 +54,90 @@ class P2pClientInfo {
   int get hashCode => Object.hash(id, username, isHost);
 }
 
+@immutable
+class P2pMessagePayload {
+  final String text;
+  final List<String> fileIds;
+
+  const P2pMessagePayload({required this.text, required this.fileIds});
+
+  /// Deserialize a P2pMessagePayload instance from a JSON map.
+  factory P2pMessagePayload.fromJson(Map<String, dynamic> json) {
+    return P2pMessagePayload(
+      text: json['text'] as String,
+      fileIds: (json['fileIds'] as List<dynamic>)
+          .map((clientJson) => clientJson.toString())
+          .toList(),
+    );
+  }
+
+  /// Deserialize a P2pMessagePayload instance from a JSON string.
+  factory P2pMessagePayload.fromJsonString(String jsonString) {
+    try {
+      final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
+      return P2pMessagePayload.fromJson(jsonMap);
+    } catch (e) {
+      debugPrint("Error decoding P2pMessagePayload from string: $e");
+      rethrow;
+    }
+  }
+
+  /// Serialize the P2pMessagePayload instance to a JSON map.
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'fileIds': fileIds
+            .map((c) => c.toString())
+            .toList(), // Serialize P2pClientInfo list
+      };
+
+  /// Serialize the P2pMessagePayload instance to a JSON string.
+  String toJsonString() {
+    return jsonEncode(toJson());
+  }
+
+  @override
+  String toString() {
+    // Limit text length in toString for readability
+    String textSummary = text.toString();
+    if (textSummary.length > 100) {
+      textSummary = '${textSummary.substring(0, 97)}...';
+    }
+    // Limit fileIds list length in toString
+    String fileIdsSummary = fileIds.length > 3
+        ? '${fileIds.sublist(0, 3)}... (${fileIds.length} total)'
+        : fileIds.toString();
+    return 'P2pMessagePayload(text: $textSummary, fileIds: $fileIdsSummary)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is P2pMessagePayload &&
+        other.text == text &&
+        listEquals(other.fileIds,
+            fileIds); // listEquals works for lists of objects with ==
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(text, Object.hashAll(fileIds)); // Hash the list
+}
+
 /// A simple message class that can be serialized to/from JSON.
 /// It includes basic fields: [senderId] (identifies the sender, e.g., client hashcode or 'server'),
 /// [type] (application-defined message type), and [payload] (the actual data).
 /// Optionally, it can include a list of [P2pClientInfo] objects (useful for broadcasting the client list).
 @immutable
 class P2pMessage {
-  /// Identifier for the sender (e.g., client hashcode, 'server', or a custom ID).
+  /// Identifier for the sender.
   final String senderId;
 
-  /// Application-defined type for the message (e.g., 'string', 'stream', 'clientList').
+  /// Application-defined type for the message (e.g., 'payload', 'clientList').
   final P2pMessageType type;
 
-  /// The actual content/data of the message. Can be any JSON-encodable object.
-  /// For binary data, consider Base64 encoding it into a string here, or use a different transport mechanism.
-  final dynamic payload;
+  /// The actual content/data of the message.
+  final P2pMessagePayload? payload;
 
   /// Optional list of client information objects, typically used by the server to inform clients about connections.
   final List<P2pClientInfo> clients;
@@ -88,7 +156,8 @@ class P2pMessage {
       type: P2pMessageType.values.firstWhere(
           (e) => e.name == json['type'], // Use name for robust serialization
           orElse: () => P2pMessageType.unknown),
-      payload: json['payload'], // Keep payload as dynamic
+      payload: json['payload'] ??
+          P2pMessagePayload.fromJson(json['payload'] as Map<String, dynamic>),
       clients: (json['clients'] as List<dynamic>)
           .map((clientJson) =>
               P2pClientInfo.fromJson(clientJson as Map<String, dynamic>))
@@ -111,7 +180,7 @@ class P2pMessage {
   Map<String, dynamic> toJson() => {
         'senderId': senderId,
         'type': type.name, // Use name for robust serialization
-        'payload': payload, // Assumes payload is JSON-encodable
+        'payload': payload?.toJson(), // Assumes payload is JSON-encodable
         'clients': clients
             .map((c) => c.toJson())
             .toList(), // Serialize P2pClientInfo list
@@ -124,16 +193,11 @@ class P2pMessage {
 
   @override
   String toString() {
-    // Limit payload length in toString for readability
-    String payloadSummary = payload.toString();
-    if (payloadSummary.length > 100) {
-      payloadSummary = '${payloadSummary.substring(0, 97)}...';
-    }
     // Limit clients list length in toString
     String clientsSummary = clients.length > 3
         ? '${clients.sublist(0, 3)}... (${clients.length} total)'
         : clients.toString();
-    return 'P2pMessage(senderId: $senderId, type: $type, payload: $payloadSummary, clients: $clientsSummary)';
+    return 'P2pMessage(senderId: $senderId, type: $type, payload: $payload, clients: $clientsSummary)';
   }
 
   @override
@@ -170,17 +234,19 @@ class P2pTransportHost {
   final Map<String, ({WebSocket socket, P2pClientInfo info})> _clients = {};
 
   /// Stream controller for broadcasting received string messages from clients.
-  final StreamController<String> _receivedTextMessagesController =
-      StreamController<String>.broadcast();
+  final StreamController<P2pMessagePayload> _receivedPayloadsController =
+      StreamController<P2pMessagePayload>.broadcast();
 
   /// Stream controller for broadcasting client connection/disconnection events.
   /// Emits the current list of [P2pClientInfo] objects.
   final StreamController<List<P2pClientInfo>> _clientListController =
       StreamController<List<P2pClientInfo>>.broadcast();
 
+  final List<String> _filePaths = []; // Store the files allowed to be shared
+
   /// Public stream of string messages received from any connected client.
-  Stream<String> get receivedTextMessagesStream =>
-      _receivedTextMessagesController.stream;
+  Stream<P2pMessagePayload> get receivedPayloadsStream =>
+      _receivedPayloadsController.stream;
 
   /// Public stream emitting the updated list of connected client information whenever a
   /// client connects or disconnects. Includes the host.
@@ -247,7 +313,8 @@ class P2pTransportHost {
     // Listen for incoming HTTP requests to upgrade to WebSocket.
     _server!.listen(
       (HttpRequest request) async {
-        if (WebSocketTransformer.isUpgradeRequest(request)) {
+        if (request.requestedUri.path == '/connect' &&
+            WebSocketTransformer.isUpgradeRequest(request)) {
           try {
             WebSocket websocket = await WebSocketTransformer.upgrade(request);
             _handleClientConnect(
@@ -255,6 +322,9 @@ class P2pTransportHost {
           } catch (e) {
             debugPrint("P2P Transport Host: Error upgrading WebSocket: $e");
           }
+        } else if (request.requestedUri.path == '/file' &&
+            request.method == 'GET') {
+          _handleFileRequest(request);
         } else {
           // Respond with error if not a WebSocket upgrade request.
           request.response
@@ -304,18 +374,16 @@ class P2pTransportHost {
           final message = P2pMessage.fromJsonString(data as String);
 
           // Add the received message to the public stream.
-          if (message.type == P2pMessageType.text ||
-              message.type == P2pMessageType.file) {
+          if (message.type == P2pMessageType.payload &&
+              message.payload != null) {
             // Get the receivers of the message
             final clientIds = message.clients.map((client) => client.id);
 
             // Consume the message
             if (clientIds.contains(hostId)) {
-              if (message.type == P2pMessageType.text) {
-                _receivedTextMessagesController.add(message.payload.toString());
-              } else {}
+              _receivedPayloadsController.add(message.payload!);
               debugPrint(
-                  "P2P Transport Host: Received from ${clientInfo.username} ($clientId): ${message.type}");
+                  "P2P Transport Host: Received payload from ${clientInfo.username} ($clientId): ${message.type}");
             }
 
             // Broadcast message to other clients
@@ -370,6 +438,38 @@ class P2pTransportHost {
       payload: null, // Payload not needed, using the 'clients' field
       clients: clientListWithHost,
     ));
+  }
+
+  void _handleFileRequest(HttpRequest request) async {
+    String filePath = request.uri.queryParameters['path'] ?? '';
+
+    if (filePath.isEmpty) {
+      debugPrint("P2P Transport Host: FilePath not found in file request.");
+      request.response
+        ..statusCode = HttpStatus.badRequest
+        ..write('FilePath not found in request')
+        ..close();
+      return;
+    }
+    if (!_filePaths.contains(filePath)) {
+      debugPrint("P2P Transport Host: File request is not allowed.");
+      request.response
+        ..statusCode = HttpStatus.forbidden
+        ..write('File request is not allowed')
+        ..close();
+      return;
+    }
+
+    // Serve the file
+    File file = File(filePath);
+    FileStat fileStat = await file.stat();
+    request.response
+      ..headers.add('content-length', fileStat.size.toString())
+      ..headers.add('content-type', 'application/octet-stream')
+      ..headers.add('content-disposition',
+          'attachment; filename=${filePath.split('/').last}')
+      ..addStream(File(filePath).openRead())
+      ..close();
   }
 
   /// Broadcasts a [message] to all connected clients.
@@ -435,8 +535,8 @@ class P2pTransportHost {
     debugPrint("P2P Transport Host: Stopping server...");
     // Close stream controllers first to prevent adding events during shutdown
     // Check if controllers are closed before closing them
-    if (!_receivedTextMessagesController.isClosed) {
-      await _receivedTextMessagesController.close();
+    if (!_receivedPayloadsController.isClosed) {
+      await _receivedPayloadsController.close();
     }
     if (!_clientListController.isClosed) {
       await _clientListController.close();
@@ -475,8 +575,8 @@ class P2pTransportClient {
   List<P2pClientInfo> _clientList = []; // Store the client info list
 
   /// Stream controller for consuming messages received from the server.
-  final StreamController<String> _receivedTextMessagesController =
-      StreamController<String>.broadcast();
+  final StreamController<P2pMessagePayload> _receivedPayloadsController =
+      StreamController<P2pMessagePayload>.broadcast();
 
   /// Stream controller for broadcasting client connection/disconnection events.
   /// Emits the current list of [P2pClientInfo] objects.
@@ -490,8 +590,8 @@ class P2pTransportClient {
   List<P2pClientInfo> get clientList => _clientList;
 
   /// Public stream of messages received from the server.
-  Stream<String> get receivedTextMessagesStream =>
-      _receivedTextMessagesController.stream;
+  Stream<P2pMessagePayload> get receivedPayloadsStream =>
+      _receivedPayloadsController.stream;
 
   /// Public stream emitting the updated list of connected client information whenever a
   /// client connects or disconnects (as reported by the server). Includes the host.
@@ -593,13 +693,11 @@ class P2pTransportClient {
             return;
           }
 
-          if (message.type == P2pMessageType.text) {
-            _receivedTextMessagesController.add(message.payload.toString());
+          if (message.type == P2pMessageType.payload &&
+              message.payload != null) {
+            _receivedPayloadsController.add(message.payload!);
             debugPrint(
-                "P2P Transport Client: Received text from ${senderInfo.username} (${senderInfo.id})");
-          } else if (message.type == P2pMessageType.file) {
-            debugPrint(
-                "P2P Transport Client: Received file from ${senderInfo.username} (${senderInfo.id})");
+                "P2P Transport Client: Received payload from ${senderInfo.username} (${senderInfo.id})");
           }
         } catch (e) {
           debugPrint(
@@ -687,8 +785,8 @@ class P2pTransportClient {
   Future<void> dispose() async {
     await disconnect(); // Ensure disconnected
     // Close stream controllers if not already closed
-    if (!_receivedTextMessagesController.isClosed) {
-      await _receivedTextMessagesController.close();
+    if (!_receivedPayloadsController.isClosed) {
+      await _receivedPayloadsController.close();
     }
     if (!_clientListController.isClosed) {
       await _clientListController.close(); // Close the client list controller

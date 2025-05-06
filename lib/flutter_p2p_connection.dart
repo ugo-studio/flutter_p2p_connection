@@ -441,39 +441,26 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     return _p2pTransport!.clientListStream;
   }
 
-  /// Provides a stream of strings received from connected clients via the P2P transport layer.
+  /// Provides a stream of payloads received from connected clients via the P2P transport layer.
   ///
-  /// This stream emits [String]s received from any connected client.
+  /// This stream emits [P2pMessagePayload]s received from any connected client.
   ///
   /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
-  Stream<String> streamReceivedTextMessages() {
+  Stream<P2pMessagePayload> streamReceivedPayloads() {
     if (_p2pTransport == null) {
       throw StateError(
           'Host: P2P transport is not active. Cannot stream data.');
     }
-    return _p2pTransport!.receivedTextMessagesStream;
+    return _p2pTransport!.receivedPayloadsStream;
   }
-
-  // /// Provides a stream of stream messages received from connected clients via the P2P transport layer.
-  // ///
-  // /// This stream emits [String] objects received from any connected client.
-  // ///
-  // /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
-  // Stream<String> streamReceivedStreamMessages() {
-  //   if (_p2pTransport == null) {
-  //     throw StateError(
-  //         'Host: P2P transport is not active. Cannot stream data.');
-  //   }
-  //   return _p2pTransport!.receivedTextMessagesStream;
-  // }
 
   /// Broadcasts a [String] to all connected clients.
   ///
-  /// - [message]: The [String] to send.
+  /// - [text]: The [String] to send.
   /// - [excludeClientIds]: Optional IDs of clients to exclude from the broadcast.
   ///
   /// Throws a [StateError] if the P2P transport is not active.
-  Future<void> broadcastText(String payload,
+  Future<void> broadcastText(String text,
       {List<String>? excludeClientIds}) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
@@ -484,20 +471,20 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     // Delegate broadcasting to the transport layer instance.
     var message = P2pMessage(
       senderId: transport.hostId,
-      type: P2pMessageType.text,
-      payload: payload,
+      type: P2pMessageType.payload,
+      payload: P2pMessagePayload(text: text, fileIds: const []),
     );
     await transport.broadcast(message, excludeClientIds: excludeClientIds);
   }
 
   /// Sends a [String] to a specific client.
   ///
+  /// - [text]: The [String] to send.
   /// - [clientId]: The ID of the target client (obtained from `streamClientList`).
-  /// - [payload]: The [String] to send.
   ///
   /// Returns `true` if the client was found and message was sent, `false` otherwise.
   /// Throws a [StateError] if the P2P transport is not active.
-  Future<bool> sendTextToClient(String clientId, String payload) async {
+  Future<bool> sendTextToClient(String text, String clientId) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
       // Check if server is running
@@ -507,8 +494,8 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     // Delegate sending to the transport layer instance.
     var message = P2pMessage(
       senderId: transport.hostId,
-      type: P2pMessageType.text,
-      payload: payload,
+      type: P2pMessageType.payload,
+      payload: P2pMessagePayload(text: text, fileIds: const []),
     );
     return await transport.sendToClient(clientId, message);
   }
@@ -907,40 +894,27 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     return _p2pTransport!.clientListStream;
   }
 
-  /// Provides a stream of strings received from connected clients via the P2P transport layer.
+  /// Provides a stream of payloads received from connected clients via the P2P transport layer.
   ///
-  /// This stream emits [String]s received from any connected client.
+  /// This stream emits [P2pMessagePayload]s received from any connected client.
   ///
   /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
-  Stream<String> streamReceivedTextMessages() {
+  Stream<P2pMessagePayload> streamReceivedPayloads() {
     if (_p2pTransport == null) {
       throw StateError(
           'Host: P2P transport is not active. Cannot stream data.');
     }
-    return _p2pTransport!.receivedTextMessagesStream;
+    return _p2pTransport!.receivedPayloadsStream;
   }
-
-  // /// Provides a stream of stream messages received from connected clients via the P2P transport layer.
-  // ///
-  // /// This stream emits [String] objects received from any connected client.
-  // ///
-  // /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
-  // Stream<String> streamReceivedStreamMessages() {
-  //   if (_p2pTransport == null) {
-  //     throw StateError(
-  //         'Host: P2P transport is not active. Cannot stream data.');
-  //   }
-  //   return _p2pTransport!.receivedStringMessagesStream;
-  // }
 
   /// Broadcasts a [String] to all connected clients.
   ///
-  /// - [message]: The [String] to send.
+  /// - [text]: The [String] to send.
   /// - [excludeClientId]: Optional ID of a client to exclude from the broadcast.
   ///
   /// Throws a [StateError] if the P2P transport is not active.
   Future<void> broadcastText(
-    String payload, {
+    String text, {
     String? excludeClientId,
   }) async {
     final transport = _p2pTransport;
@@ -953,8 +927,8 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     // Delegate broadcasting to the transport layer instance.
     var message = P2pMessage(
       senderId: transport.clientId,
-      type: P2pMessageType.text,
-      payload: payload,
+      type: P2pMessageType.payload,
+      payload: P2pMessagePayload(text: text, fileIds: const []),
       // Specify the clients that'll receive the message
       clients: transport.clientList
           .where((client) => client.id != excludeClientId)
@@ -965,12 +939,15 @@ class FlutterP2pClient extends _FlutterP2pConnection {
 
   /// Sends a [String] to a specific client.
   ///
+  /// - [text]: The [String] to send.
   /// - [clientId]: The ID of the target client (obtained from `streamClientList`).
-  /// - [payload]: The [String] to send.
   ///
   /// Returns `true` if the client was found and message was sent, `false` otherwise.
   /// Throws a [StateError] if the P2P transport is not active.
-  Future<bool> sendTextToClient(String clientId, String payload) async {
+  Future<bool> sendTextToClient(
+    String text,
+    String clientId,
+  ) async {
     final transport = _p2pTransport;
     // Check if transport is running
     if (transport == null || !transport.isConnected) {
@@ -981,8 +958,8 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     // Delegate sending to the transport layer instance.
     var message = P2pMessage(
       senderId: transport.clientId,
-      type: P2pMessageType.text,
-      payload: payload,
+      type: P2pMessageType.payload,
+      payload: P2pMessagePayload(text: text, fileIds: const []),
       // Specify the clients that'll receive the message
       clients: transport.clientList
           .where((client) => client.id == clientId)

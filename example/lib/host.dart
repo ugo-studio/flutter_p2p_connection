@@ -18,7 +18,7 @@ class _HostPageState extends State<HostPage> {
 
   StreamSubscription<HotspotHostState>? hotspotStateSubscription;
   StreamSubscription<List<P2pClientInfo>>? clientListStream;
-  StreamSubscription<String>? textMessageStream;
+  StreamSubscription<P2pMessagePayload>? payloadsStream;
 
   HotspotHostState? hotspotState;
   List<P2pClientInfo> clientList = [];
@@ -43,7 +43,7 @@ class _HostPageState extends State<HostPage> {
     textEditingController.dispose();
     hotspotStateSubscription?.cancel();
     clientListStream?.cancel();
-    textMessageStream?.cancel();
+    payloadsStream?.cancel();
     super.dispose();
   }
 
@@ -84,14 +84,8 @@ class _HostPageState extends State<HostPage> {
   void createGroup() async {
     try {
       await p2p.createGroup();
-      clientListStream = p2p.streamClientList().listen((list) {
-        setState(() {
-          clientList = list;
-        });
-      });
-      textMessageStream = p2p.streamReceivedTextMessages().listen((data) {
-        snack('Received message: $data');
-      });
+      streamClientList();
+      streamReceivedPayloads();
       snack("created group");
     } catch (e) {
       snack("failed to create group: $e");
@@ -119,6 +113,22 @@ class _HostPageState extends State<HostPage> {
         ),
       ),
     );
+  }
+
+  void streamClientList() {
+    clientListStream = p2p.streamClientList().listen((list) {
+      setState(() {
+        clientList = list;
+      });
+    });
+  }
+
+  void streamReceivedPayloads() {
+    payloadsStream = p2p.streamReceivedPayloads().listen((payload) {
+      if (payload.text.isNotEmpty) {
+        snack('Received message: ${payload.text}');
+      }
+    });
   }
 
   void sendMessage() async {
