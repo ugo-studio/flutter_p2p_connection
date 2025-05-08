@@ -7,7 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'flutter_p2p_connection_platform_interface.dart';
 
 // Default port for the custom P2P transport layer if not specified otherwise.
-const int _defaultP2pTransportPort = 3434;
+const int _defaultP2pTransportPort = 3456;
+const int _defaultP2pTransportClientFileServerPort = 4567;
 
 /// The main entry point for the Flutter P2P Connection plugin.
 ///
@@ -472,7 +473,7 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     var message = P2pMessage(
       senderId: transport.hostId,
       type: P2pMessageType.payload,
-      payload: P2pMessagePayload(text: text, fileIds: const []),
+      payload: P2pMessagePayload(text: text),
     );
     await transport.broadcast(message, excludeClientIds: excludeClientIds);
   }
@@ -495,7 +496,7 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     var message = P2pMessage(
       senderId: transport.hostId,
       type: P2pMessageType.payload,
-      payload: P2pMessagePayload(text: text, fileIds: const []),
+      payload: P2pMessagePayload(text: text),
     );
     return await transport.sendToClient(clientId, message);
   }
@@ -831,6 +832,7 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     _p2pTransport = P2pTransportClient(
       hostIp: state.hostGatewayIpAddress!, // IP is confirmed non-null here
       defaultPort: _defaultP2pTransportPort,
+      defaultFilePort: _defaultP2pTransportClientFileServerPort,
       username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
     );
     try {
@@ -928,7 +930,7 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     var message = P2pMessage(
       senderId: transport.clientId,
       type: P2pMessageType.payload,
-      payload: P2pMessagePayload(text: text, fileIds: const []),
+      payload: P2pMessagePayload(text: text),
       // Specify the clients that'll receive the message
       clients: transport.clientList
           .where((client) => client.id != excludeClientId)
@@ -959,7 +961,7 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     var message = P2pMessage(
       senderId: transport.clientId,
       type: P2pMessageType.payload,
-      payload: P2pMessagePayload(text: text, fileIds: const []),
+      payload: P2pMessagePayload(text: text),
       // Specify the clients that'll receive the message
       clients: transport.clientList
           .where((client) => client.id == clientId)

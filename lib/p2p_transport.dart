@@ -1,23 +1,27 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math'; // For min
 
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart'; // For debugPrint
+import 'package:http/http.dart' as http; // For client download
+import 'package:path/path.dart' as p; // For basename
+import 'package:uuid/uuid.dart';
+
+// --- Enums and Basic Info Classes ---
 
 enum P2pMessageType {
-  payload,
+  payload, // General data, now includes file info
   clientList,
+  fileProgressUpdate, // New type for reporting download progress
   unknown,
 }
 
-/// Holds information about a connected client or the host.
 @immutable
 class P2pClientInfo {
-  final String
-      id; // Unique identifier (hashcode for clients, 'server' for host)
-  final String username; // User-defined name
-  final bool isHost; // True if this represents the host/server
+  final String id;
+  final String username;
+  final bool isHost;
 
   const P2pClientInfo(
       {required this.id, required this.username, required this.isHost});
@@ -39,39 +43,100 @@ class P2pClientInfo {
   @override
   String toString() =>
       'P2pClientInfo(id: $id, username: $username, isHost: $isHost)';
-
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
-    return other is P2pClientInfo &&
-        other.id == id &&
-        other.username == username &&
-        other.isHost == isHost;
-  }
-
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is P2pClientInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          username == other.username &&
+          isHost == other.isHost;
   @override
   int get hashCode => Object.hash(id, username, isHost);
 }
 
+// --- File Information Class ---
+@immutable
+class P2pFileInfo {
+  final String id; // Unique ID for this file transfer instance
+  final String name; // Original filename
+  final int size; // File size in bytes
+  final String senderId; // ID of the client/host initiating the share
+  final String senderHostIp; // IP address of the device serving the file
+  final int senderPort; // Port of the HTTP server serving the file
+  final Map<String, dynamic> metadata; // For future use (e.g., checksum)
+
+  const P2pFileInfo({
+    required this.id,
+    required this.name,
+    required this.size,
+    required this.senderId,
+    required this.senderHostIp,
+    required this.senderPort,
+    this.metadata = const {},
+  });
+
+  factory P2pFileInfo.fromJson(Map<String, dynamic> json) {
+    return P2pFileInfo(
+      id: json['id'] as String? ?? const Uuid().v4(), // Should not be null
+      name: json['name'] as String? ?? 'unknown_file',
+      size: json['size'] as int? ?? 0,
+      senderId: json['senderId'] as String? ?? 'unknown_sender',
+      senderHostIp: json['senderHostIp'] as String? ?? '',
+      senderPort: json['senderPort'] as int? ?? 0,
+      metadata: Map<String, dynamic>.from(
+          json['metadata'] as Map? ?? {}), // Ensure it's a map
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'size': size,
+        'senderId': senderId,
+        'senderHostIp': senderHostIp,
+        'senderPort': senderPort,
+        'metadata': metadata,
+      };
+
+  @override
+  String toString() =>
+      'P2pFileInfo(id: $id, name: $name, size: $size, sender: $senderId @ $senderHostIp:$senderPort)';
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is P2pFileInfo &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          size == other.size &&
+          senderId == other.senderId &&
+          senderHostIp == other.senderHostIp &&
+          senderPort == other.senderPort &&
+          mapEquals(metadata, other.metadata); // Use mapEquals for metadata
+  @override
+  int get hashCode =>
+      Object.hash(id, name, size, senderId, senderHostIp, senderPort, metadata);
+}
+
+// --- Modified: Payload now carries P2pFileInfo ---
 @immutable
 class P2pMessagePayload {
-  final String text;
-  final List<String> fileIds;
+  final String text; // Optional text message
+  final List<P2pFileInfo> files; // List of files being shared in this message
 
-  const P2pMessagePayload({required this.text, required this.fileIds});
+  const P2pMessagePayload({this.text = '', this.files = const []});
 
-  /// Deserialize a P2pMessagePayload instance from a JSON map.
   factory P2pMessagePayload.fromJson(Map<String, dynamic> json) {
     return P2pMessagePayload(
-      text: json['text'] as String,
-      fileIds: (json['fileIds'] as List<dynamic>)
-          .map((clientJson) => clientJson.toString())
+      text: json['text'] as String? ?? '',
+      files: (json['files'] as List<dynamic>? ?? [])
+          .map((fileJson) =>
+              P2pFileInfo.fromJson(fileJson as Map<String, dynamic>))
           .toList(),
     );
   }
 
-  /// Deserialize a P2pMessagePayload instance from a JSON string.
   factory P2pMessagePayload.fromJsonString(String jsonString) {
     try {
       final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
@@ -82,90 +147,132 @@ class P2pMessagePayload {
     }
   }
 
-  /// Serialize the P2pMessagePayload instance to a JSON map.
   Map<String, dynamic> toJson() => {
         'text': text,
-        'fileIds': fileIds
-            .map((c) => c.toString())
-            .toList(), // Serialize P2pClientInfo list
+        'files': files.map((f) => f.toJson()).toList(),
       };
 
-  /// Serialize the P2pMessagePayload instance to a JSON string.
-  String toJsonString() {
-    return jsonEncode(toJson());
-  }
+  String toJsonString() => jsonEncode(toJson());
 
   @override
   String toString() {
-    // Limit text length in toString for readability
-    String textSummary = text.toString();
-    if (textSummary.length > 100) {
-      textSummary = '${textSummary.substring(0, 97)}...';
-    }
-    // Limit fileIds list length in toString
-    String fileIdsSummary = fileIds.length > 3
-        ? '${fileIds.sublist(0, 3)}... (${fileIds.length} total)'
-        : fileIds.toString();
-    return 'P2pMessagePayload(text: $textSummary, fileIds: $fileIdsSummary)';
+    String textSummary =
+        text.length > 50 ? '${text.substring(0, 47)}...' : text;
+    String filesSummary = files.length > 2
+        ? '${files.sublist(0, 2).map((f) => f.name)}... (${files.length} total)'
+        : files.map((f) => f.name).toString();
+    return 'P2pMessagePayload(text: "$textSummary", files: $filesSummary)';
   }
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
-    return other is P2pMessagePayload &&
-        other.text == text &&
-        listEquals(other.fileIds,
-            fileIds); // listEquals works for lists of objects with ==
-  }
-
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is P2pMessagePayload &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          listEquals(files, other.files);
   @override
-  int get hashCode =>
-      Object.hash(text, Object.hashAll(fileIds)); // Hash the list
+  int get hashCode => Object.hash(text, Object.hashAll(files));
 }
 
-/// A simple message class that can be serialized to/from JSON.
-/// It includes basic fields: [senderId] (identifies the sender, e.g., client hashcode or 'server'),
-/// [type] (application-defined message type), and [payload] (the actual data).
-/// Optionally, it can include a list of [P2pClientInfo] objects (useful for broadcasting the client list).
+// --- New: File Progress Update Payload ---
+@immutable
+class P2pFileProgressUpdate {
+  final String fileId; // Which file is being updated
+  final String receiverId; // Who is downloading
+  final int bytesDownloaded; // How many bytes they have downloaded so far
+
+  const P2pFileProgressUpdate({
+    required this.fileId,
+    required this.receiverId,
+    required this.bytesDownloaded,
+  });
+
+  factory P2pFileProgressUpdate.fromJson(Map<String, dynamic> json) {
+    return P2pFileProgressUpdate(
+      fileId: json['fileId'] as String? ?? '',
+      receiverId: json['receiverId'] as String? ?? '',
+      bytesDownloaded: json['bytesDownloaded'] as int? ?? 0,
+    );
+  }
+
+  factory P2pFileProgressUpdate.fromJsonString(String jsonString) {
+    try {
+      final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
+      return P2pFileProgressUpdate.fromJson(jsonMap);
+    } catch (e) {
+      debugPrint("Error decoding P2pFileProgressUpdate from string: $e");
+      rethrow;
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+        'fileId': fileId,
+        'receiverId': receiverId,
+        'bytesDownloaded': bytesDownloaded,
+      };
+
+  String toJsonString() => jsonEncode(toJson());
+
+  @override
+  String toString() =>
+      'P2pFileProgressUpdate(fileId: $fileId, receiver: $receiverId, bytes: $bytesDownloaded)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is P2pFileProgressUpdate &&
+          runtimeType == other.runtimeType &&
+          fileId == other.fileId &&
+          receiverId == other.receiverId &&
+          bytesDownloaded == other.bytesDownloaded;
+
+  @override
+  int get hashCode => Object.hash(fileId, receiverId, bytesDownloaded);
+}
+
+// --- Modified: P2pMessage now handles different payload types ---
 @immutable
 class P2pMessage {
-  /// Identifier for the sender.
   final String senderId;
-
-  /// Application-defined type for the message (e.g., 'payload', 'clientList').
   final P2pMessageType type;
-
-  /// The actual content/data of the message.
-  final P2pMessagePayload? payload;
-
-  /// Optional list of client information objects, typically used by the server to inform clients about connections.
-  final List<P2pClientInfo> clients;
+  final dynamic
+      payload; // Can be P2pMessagePayload or P2pFileProgressUpdate or null
+  final List<P2pClientInfo> clients; // Target recipients for payload messages
 
   const P2pMessage({
     required this.senderId,
     required this.type,
-    required this.payload,
+    this.payload,
     this.clients = const [],
   });
 
-  /// Deserialize a P2pMessage instance from a JSON map.
   factory P2pMessage.fromJson(Map<String, dynamic> json) {
+    final type = P2pMessageType.values.firstWhere((e) => e.name == json['type'],
+        orElse: () => P2pMessageType.unknown);
+    dynamic payloadData;
+    if (json['payload'] != null) {
+      if (type == P2pMessageType.payload) {
+        payloadData =
+            P2pMessagePayload.fromJson(json['payload'] as Map<String, dynamic>);
+      } else if (type == P2pMessageType.fileProgressUpdate) {
+        payloadData = P2pFileProgressUpdate.fromJson(
+            json['payload'] as Map<String, dynamic>);
+      }
+      // Add other types here if needed
+    }
+
     return P2pMessage(
       senderId: json['senderId'] as String? ?? 'unknown',
-      type: P2pMessageType.values.firstWhere(
-          (e) => e.name == json['type'], // Use name for robust serialization
-          orElse: () => P2pMessageType.unknown),
-      payload: json['payload'] ??
-          P2pMessagePayload.fromJson(json['payload'] as Map<String, dynamic>),
-      clients: (json['clients'] as List<dynamic>)
+      type: type,
+      payload: payloadData, // Deserialize based on type
+      clients: (json['clients'] as List<dynamic>? ?? [])
           .map((clientJson) =>
               P2pClientInfo.fromJson(clientJson as Map<String, dynamic>))
           .toList(),
     );
   }
 
-  /// Deserialize a P2pMessage instance from a JSON string.
   factory P2pMessage.fromJsonString(String jsonString) {
     try {
       final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
@@ -176,168 +283,252 @@ class P2pMessage {
     }
   }
 
-  /// Serialize the P2pMessage instance to a JSON map.
   Map<String, dynamic> toJson() => {
         'senderId': senderId,
-        'type': type.name, // Use name for robust serialization
-        'payload': payload?.toJson(), // Assumes payload is JSON-encodable
-        'clients': clients
-            .map((c) => c.toJson())
-            .toList(), // Serialize P2pClientInfo list
+        'type': type.name,
+        'payload': switch (payload) {
+          // Use pattern matching for serialization
+          P2pMessagePayload p => p.toJson(),
+          P2pFileProgressUpdate p => p.toJson(),
+          _ => null, // Handle null or other types
+        },
+        'clients': clients.map((c) => c.toJson()).toList(),
       };
 
-  /// Serialize the P2pMessage instance to a JSON string.
-  String toJsonString() {
-    return jsonEncode(toJson());
-  }
+  String toJsonString() => jsonEncode(toJson());
 
   @override
   String toString() {
-    // Limit clients list length in toString
     String clientsSummary = clients.length > 3
-        ? '${clients.sublist(0, 3)}... (${clients.length} total)'
-        : clients.toString();
+        ? '${clients.sublist(0, 3).map((c) => c.username)}... (${clients.length} total)'
+        : clients.map((c) => c.username).toString();
     return 'P2pMessage(senderId: $senderId, type: $type, payload: $payload, clients: $clientsSummary)';
   }
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
-    return other is P2pMessage &&
-        other.senderId == senderId &&
-        other.type == type &&
-        // Note: Deep equality check for payload might be needed if it's complex
-        other.payload == payload &&
-        listEquals(other.clients,
-            clients); // listEquals works for lists of objects with ==
-  }
-
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is P2pMessage &&
+          runtimeType == other.runtimeType &&
+          senderId == other.senderId &&
+          type == other.type &&
+          payload == other.payload && // Assumes payload types have ==
+          listEquals(clients, other.clients);
   @override
-  int get hashCode => Object.hash(
-      senderId, type, payload, Object.hashAll(clients)); // Hash the list
+  int get hashCode =>
+      Object.hash(senderId, type, payload, Object.hashAll(clients));
 }
 
-/// The host class for P2P transport using WebSockets.
-///
-/// It creates a WebSocket server on the specified [hostIp] and attempts to bind
-/// starting from [defaultPort], trying subsequent ports if the default is busy.
-/// It manages connected clients and facilitates broadcasting messages.
+// --- New Helper Class: To track sent file state ---
+class HostedFileInfo {
+  final P2pFileInfo info;
+  final String localPath;
+  // Map: Receiver ID -> bytes downloaded
+  final Map<String, int> downloadProgressBytes;
+
+  HostedFileInfo({
+    required this.info,
+    required this.localPath,
+    required List<String> recipientIds,
+  }) : downloadProgressBytes = {
+          for (var id in recipientIds) id: 0
+        }; // Initialize progress for all recipients
+
+  // Calculate percentage for a specific receiver
+  double getProgressPercent(String receiverId) {
+    final bytes = downloadProgressBytes[receiverId];
+    if (info.size == 0 || bytes == null) return 0.0;
+    return (bytes / info.size) * 100.0;
+  }
+
+  // Update progress and return true if changed significantly
+  bool updateProgress(String receiverId, int bytes) {
+    final currentBytes = downloadProgressBytes[receiverId] ?? 0;
+    // Only update if it's forward progress
+    if (bytes > currentBytes) {
+      downloadProgressBytes[receiverId] = bytes;
+      // Trigger update if progress changes by more than ~1% or reaches 100%
+      // (Avoid spamming updates for tiny changes)
+      // double changePercent = (bytes - currentBytes) / info.size * 100.0;
+      // return changePercent > 1.0 || bytes == info.size;
+      return true; // For simplicity, notify on every update for now
+    }
+    return false;
+  }
+}
+
+// --- New Helper Class: To track received file state ---
+class ReceivableFileInfo {
+  final P2pFileInfo info;
+  double downloadProgressPercent; // Percentage 0-100
+  String? savePath; // Where the file is being/was saved
+  // You could add download state (idle, downloading, completed, error)
+
+  ReceivableFileInfo({
+    required this.info,
+    this.downloadProgressPercent = 0.0,
+    this.savePath,
+  });
+}
+
+// --- New Event Class for Sender Progress Updates ---
+class FileShareProgressUpdate {
+  final String fileId;
+  final String receiverId;
+  final double progressPercent; // 0-100
+  final int bytesDownloaded;
+  final int totalSize;
+
+  FileShareProgressUpdate({
+    required this.fileId,
+    required this.receiverId,
+    required this.progressPercent,
+    required this.bytesDownloaded,
+    required this.totalSize,
+  });
+
+  @override
+  String toString() =>
+      'FileShareProgressUpdate(fileId: $fileId, receiver: $receiverId, progress: ${progressPercent.toStringAsFixed(1)}%)';
+}
+
+// --- New Event Class for Receiver Progress Updates ---
+class FileDownloadProgressUpdate {
+  final String fileId;
+  final double progressPercent; // 0-100
+  final int bytesDownloaded;
+  final int totalSize;
+  final String savePath;
+
+  FileDownloadProgressUpdate({
+    required this.fileId,
+    required this.progressPercent,
+    required this.bytesDownloaded,
+    required this.totalSize,
+    required this.savePath,
+  });
+
+  @override
+  String toString() =>
+      'FileDownloadProgressUpdate(fileId: $fileId, progress: ${progressPercent.toStringAsFixed(1)}%, path: $savePath)';
+}
+
+// --- P2pTransportHost ---
 class P2pTransportHost {
   final int defaultPort;
-  final String username; // Host's username
-  final String hostId = const Uuid().v4(); // Host's random id
+  final String username;
+  final String hostId = const Uuid().v4();
   HttpServer? _server;
   int? _portInUse;
-
-  /// Map storing connected clients, using their hash code string as the key, along with their info.
   final Map<String, ({WebSocket socket, P2pClientInfo info})> _clients = {};
 
-  /// Stream controller for broadcasting received string messages from clients.
+  // --- File Sharing State ---
+  // Map: File ID -> HostedFileInfo
+  final Map<String, HostedFileInfo> _hostedFiles = {};
+  // Stream controller for notifying UI about sender-side progress updates
+  final StreamController<FileShareProgressUpdate> _fileProgressController =
+      StreamController<FileShareProgressUpdate>.broadcast();
+  // --- End File Sharing State ---
+
+  // --- File Receiving State ---
+  // Map: File ID -> ReceivableFileInfo
+  final Map<String, ReceivableFileInfo> _receivableFiles = {};
+  // Stream controller for notifying UI about download progress
+  final StreamController<FileDownloadProgressUpdate>
+      _downloadProgressController =
+      StreamController<FileDownloadProgressUpdate>.broadcast();
+  // --- End File Receiving State ---
+
   final StreamController<P2pMessagePayload> _receivedPayloadsController =
       StreamController<P2pMessagePayload>.broadcast();
-
-  /// Stream controller for broadcasting client connection/disconnection events.
-  /// Emits the current list of [P2pClientInfo] objects.
   final StreamController<List<P2pClientInfo>> _clientListController =
       StreamController<List<P2pClientInfo>>.broadcast();
 
-  final List<String> _filePaths = []; // Store the files allowed to be shared
-
-  /// Public stream of string messages received from any connected client.
   Stream<P2pMessagePayload> get receivedPayloadsStream =>
       _receivedPayloadsController.stream;
-
-  /// Public stream emitting the updated list of connected client information whenever a
-  /// client connects or disconnects. Includes the host.
   Stream<List<P2pClientInfo>> get clientListStream =>
       _clientListController.stream;
+  Stream<FileShareProgressUpdate> get fileShareProgressStream =>
+      _fileProgressController.stream; // New stream for UI updates
 
-  /// The actual port the server is listening on after successful binding.
-  /// Null if the server is not running.
   int? get portInUse => _portInUse;
-
-  /// Public list of the connected client IDs (excluding the host).
   List<String> get clientList => _clients.keys.toList();
+  // Expose hosted files info (read-only)
+  List<P2pFileInfo> get hostedFileInfos =>
+      _hostedFiles.values.map((hf) => hf.info).toList();
 
   P2pTransportHost({required this.defaultPort, required this.username});
 
-  /// Starts the WebSocket server.
-  ///
-  /// Tries to bind to [hostIp] starting at [defaultPort], incrementing the port
-  /// up to 10 times if the port is already in use.
-  ///
-  /// Throws an [Exception] if unable to bind to any port in the range.
   Future<void> start() async {
-    if (_server != null) {
-      debugPrint("Server already running on $_portInUse.");
-      return;
-    }
-
+    if (_server != null) return;
     int attempts = 0;
     int port = defaultPort;
     while (attempts < 10) {
       try {
-        InternetAddress hostIp = InternetAddress.anyIPv4;
+        // // Determine a reliable host IP (might need platform-specific logic for robust discovery)
+        // // Using anyIPv4 for binding, but need a specific IP for P2pFileInfo
+        // final interfaces = await NetworkInterface.list(
+        //     includeLoopback: false, type: InternetAddressType.IPv4);
+        // final hostIp = interfaces.isNotEmpty
+        //     ? interfaces.first.addresses.first.address
+        //     : InternetAddress.anyIPv4.address; // Fallback needed
+        // debugPrint("P2P Transport Host: Attempting to bind to $hostIp:$port");
 
-        _server = await HttpServer.bind(hostIp, port);
+        _server = await HttpServer.bind(
+            InternetAddress.anyIPv4, port); // Bind to anyIPv4
         _portInUse = port;
-        debugPrint(
-            "P2P Transport Host: Server started on ${hostIp.address}:$_portInUse");
-        break; // Success
+        debugPrint("P2P Transport Host: Server started on port $_portInUse");
+        break;
       } on SocketException catch (e) {
-        if (e.osError?.errorCode ==
-                98 || // Address already in use (Linux/macOS)
-            e.osError?.errorCode == 48 || // Address already in use (Windows)
-            e.message.contains('errno = 98') || // Fallback check
+        if (e.osError?.errorCode == 98 ||
+            e.osError?.errorCode == 48 ||
+            e.message.contains('errno = 98') ||
             e.message.contains('errno = 48')) {
-          debugPrint(
-              "P2P Transport Host: Port $port is in use, trying next port...");
+          debugPrint("P2P Transport Host: Port $port in use, trying next...");
           port++;
           attempts++;
         } else {
           debugPrint("P2P Transport Host: Error binding server: $e");
-          rethrow; // Rethrow unexpected socket errors
+          rethrow;
         }
       } catch (e) {
         debugPrint("P2P Transport Host: Unexpected error starting server: $e");
-        rethrow; // Rethrow other unexpected errors
+        rethrow;
       }
     }
-
     if (_server == null) {
       throw Exception(
           "P2P Transport Host: Could not bind to any port in the range $defaultPort-${port - 1}.");
     }
 
-    // Listen for incoming HTTP requests to upgrade to WebSocket.
     _server!.listen(
       (HttpRequest request) async {
-        if (request.requestedUri.path == '/connect' &&
+        final path = request.requestedUri.path;
+        debugPrint("P2P Transport Host: Received request for $path");
+        if (path == '/connect' &&
             WebSocketTransformer.isUpgradeRequest(request)) {
           try {
             WebSocket websocket = await WebSocketTransformer.upgrade(request);
-            _handleClientConnect(
-                websocket, request); // Pass request to get query params
+            _handleClientConnect(websocket, request);
           } catch (e) {
             debugPrint("P2P Transport Host: Error upgrading WebSocket: $e");
+            request.response.statusCode = HttpStatus.internalServerError;
+            request.response.write('WebSocket upgrade failed.');
+            await request.response.close();
           }
-        } else if (request.requestedUri.path == '/file' &&
-            request.method == 'GET') {
-          _handleFileRequest(request);
+        } else if (path == '/file' && request.method == 'GET') {
+          await _handleFileRequest(request); // Now async
         } else {
-          // Respond with error if not a WebSocket upgrade request.
+          debugPrint(
+              "P2P Transport Host: Invalid request type for ${request.uri}");
           request.response
-            ..statusCode = HttpStatus.upgradeRequired
-            ..headers.add('Connection', 'Upgrade')
-            ..headers.add('Upgrade', 'websocket')
-            ..write("WebSocket connections only")
+            ..statusCode = HttpStatus.methodNotAllowed // Or 404
+            ..write("Unsupported request.")
             ..close();
         }
       },
       onError: (error) {
         debugPrint("P2P Transport Host: Server listen error: $error");
-        // Consider stopping the server or attempting recovery here
       },
       onDone: () {
         debugPrint("P2P Transport Host: Server stopped listening.");
@@ -346,172 +537,417 @@ class P2pTransportHost {
     );
   }
 
-  /// Handles a new client WebSocket connection.
   void _handleClientConnect(WebSocket client, HttpRequest request) {
-    // Extract user info from query parameters (fallback to default)
     final clientId =
         request.uri.queryParameters['id'] ?? client.hashCode.toString();
     final clientUsername =
         request.uri.queryParameters['username'] ?? 'User_$clientId';
+    // final clientFileServerPort = int.tryParse(
+    //     request.uri.queryParameters['filePort'] ??
+    //         ''); // Get client's file server port
+
+    // TODO: Need client's IP address. The HttpRequest gives remote address, reliable?
+    // final clientIp =
+    //     request.connectionInfo?.remoteAddress.address ?? 'unknown_ip';
+    // debugPrint(
+    //     "P2P Transport Host: Client $clientUsername ($clientId) connected from $clientIp. Reported File Port: $clientFileServerPort");
+
+    // We might store clientIp and clientFileServerPort in P2pClientInfo if needed elsewhere
+    // For now, we primarily need the sender's IP/Port when they SHARE a file.
 
     final clientInfo =
         P2pClientInfo(id: clientId, username: clientUsername, isHost: false);
-
-    debugPrint(
-        "P2P Transport Host: Client connected: ${clientInfo.username} (ID: $clientId)");
-
-    // Store both the socket and the client info
     _clients[clientId] = (socket: client, info: clientInfo);
-
-    // Notify listeners about the updated client list.
     _broadcastClientListUpdate();
 
-    // Listen for messages coming from this specific client.
     client.listen(
       (data) {
         try {
-          // Assume data is a JSON string representing P2pMessage
           final message = P2pMessage.fromJsonString(data as String);
 
-          // Add the received message to the public stream.
-          if (message.type == P2pMessageType.payload &&
-              message.payload != null) {
-            // Get the receivers of the message
-            final clientIds = message.clients.map((client) => client.id);
+          // Handle different message types
+          switch (message.type) {
+            case P2pMessageType.payload:
+              if (message.payload is P2pMessagePayload) {
+                final payload = message.payload as P2pMessagePayload;
+                // Check if host is a recipient
+                bool hostIsRecipient =
+                    message.clients.any((c) => c.id == hostId);
 
-            // Consume the message
-            if (clientIds.contains(hostId)) {
-              _receivedPayloadsController.add(message.payload!);
+                if (hostIsRecipient) {
+                  // Add files to receivable list if any
+                  if (payload.files.isNotEmpty) {
+                    // Host needs a way to manage received files if it can receive
+                    debugPrint(
+                        "P2P Transport Host: Received file info for: ${payload.files.map((f) => f.name)}");
+                    // TODO: Add host-side logic to handle receivable files if needed
+                  }
+                  _receivedPayloadsController
+                      .add(payload); // Forward text/general payload
+                }
+
+                // Relay message to other targeted clients
+                final recipientClientIds = message.clients
+                    .where((c) => c.id != hostId)
+                    .map((c) => c.id)
+                    .toList();
+                if (recipientClientIds.isNotEmpty) {
+                  broadcast(message,
+                      includeClientIds:
+                          recipientClientIds); // Only send to specified clients
+                }
+
+                debugPrint(
+                    "P2P Transport Host: Received payload from ${clientInfo.username} ($clientId) targeting ${message.clients.length} recipients.");
+              } else {
+                debugPrint(
+                    "P2P Transport Host: Received payload message with incorrect payload type from $clientId");
+              }
+              break;
+            case P2pMessageType.fileProgressUpdate:
+              if (message.payload is P2pFileProgressUpdate) {
+                _handleFileProgressUpdate(
+                    message.payload as P2pFileProgressUpdate);
+              } else {
+                debugPrint(
+                    "P2P Transport Host: Received fileProgressUpdate message with incorrect payload type from $clientId");
+              }
+              break;
+            case P2pMessageType.clientList:
+              // Clients shouldn't send client lists, ignore.
               debugPrint(
-                  "P2P Transport Host: Received payload from ${clientInfo.username} ($clientId): ${message.type}");
-            }
-
-            // Broadcast message to other clients
-            var excludedClientIds = _clients.keys
-                .where((clientId) => !clientIds.contains(clientId))
-                .toList();
-            broadcast(message, excludeClientIds: excludedClientIds);
+                  "P2P Transport Host: Received unexpected clientList message from $clientId");
+              break;
+            case P2pMessageType.unknown:
+              debugPrint(
+                  "P2P Transport Host: Received unknown message type from $clientId");
+              break;
           }
-        } catch (e) {
+        } catch (e, s) {
           debugPrint(
-              "P2P Transport Host: Error parsing message from ${clientInfo.username} ($clientId): $e\nData: $data");
-          // Optionally send an error back to the client or just log it.
+              "P2P Transport Host: Error parsing message from ${clientInfo.username} ($clientId): $e\nStack: $s\nData: $data");
         }
       },
       onDone: () {
         debugPrint(
             "P2P Transport Host: Client disconnected: ${clientInfo.username} ($clientId)");
         _clients.remove(clientId);
-        // Notify listeners about the updated client list.
+        // TODO: Should we remove files hosted by this client if they disconnect?
         _broadcastClientListUpdate();
       },
       onError: (error) {
         debugPrint(
             "P2P Transport Host: Error on client socket ${clientInfo.username} ($clientId): $error");
-        // Assume error means disconnection.
         _clients.remove(clientId);
         _broadcastClientListUpdate();
-        // Ensure socket is closed if possible
         client.close().catchError((_) => null);
       },
-      cancelOnError: true, // Close the stream on error
+      cancelOnError: true,
     );
   }
 
-  /// Sends the current list of client info (including host) to the client list stream controller and broadcasts it.
+  // --- Modified: Handle Progress Updates ---
+  void _handleFileProgressUpdate(P2pFileProgressUpdate progressUpdate) {
+    final fileInfo = _hostedFiles[progressUpdate.fileId];
+    if (fileInfo != null) {
+      // Ensure the update is from a valid receiver for this file
+      if (fileInfo.downloadProgressBytes
+          .containsKey(progressUpdate.receiverId)) {
+        final bool changed = fileInfo.updateProgress(
+            progressUpdate.receiverId, progressUpdate.bytesDownloaded);
+        debugPrint(
+            "P2P Transport Host: Progress update for ${fileInfo.info.name} from ${progressUpdate.receiverId}: ${progressUpdate.bytesDownloaded}/${fileInfo.info.size} bytes.");
+
+        if (changed && !_fileProgressController.isClosed) {
+          final percent =
+              fileInfo.getProgressPercent(progressUpdate.receiverId);
+          _fileProgressController.add(FileShareProgressUpdate(
+            fileId: progressUpdate.fileId,
+            receiverId: progressUpdate.receiverId,
+            progressPercent: percent,
+            bytesDownloaded: progressUpdate.bytesDownloaded,
+            totalSize: fileInfo.info.size,
+          ));
+        }
+      } else {
+        debugPrint(
+            "P2P Transport Host: Received progress update from non-recipient ${progressUpdate.receiverId} for file ${progressUpdate.fileId}");
+      }
+    } else {
+      debugPrint(
+          "P2P Transport Host: Received progress update for unknown/unhosted file ID: ${progressUpdate.fileId}");
+      // Maybe the file was removed? Or this is an old update.
+    }
+  }
+
   void _broadcastClientListUpdate() {
-    // Create the list including the host
     final hostInfo =
         P2pClientInfo(id: hostId, username: username, isHost: true);
+    final clientListInfo = _clients.values.map((c) => c.info).toList();
+    final fullListWithHost = [hostInfo, ...clientListInfo];
 
-    final clientListWithoutHost = _clients.values.map((c) => c.info);
-    final clientListWithHost = [hostInfo, ...clientListWithoutHost];
+    // Notify local listeners (host UI) about connected clients (excluding host itself)
+    if (!_clientListController.isClosed) {
+      _clientListController.add(clientListInfo);
+    }
 
-    _clientListController.add(clientListWithoutHost
-        .toList()); // Don't need host in the client list consumed by the host
-    debugPrint(
-        "P2P Transport Host: Broadcasting client list update: ${clientListWithoutHost.map((c) => c.username).toList()}");
-    // Send this list as a P2pMessage to all clients
+    // Broadcast the full list (including host) to all connected clients
     broadcast(P2pMessage(
       senderId: hostId,
       type: P2pMessageType.clientList,
-      payload: null, // Payload not needed, using the 'clients' field
-      clients: clientListWithHost,
+      payload: null, // No payload needed for client list type
+      clients: fullListWithHost, // Send the complete list
     ));
+    debugPrint(
+        "P2P Transport Host: Broadcasting client list update: ${fullListWithHost.map((c) => c.username).toList()}");
   }
 
-  void _handleFileRequest(HttpRequest request) async {
-    String filePath = request.uri.queryParameters['path'] ?? '';
+  // --- Modified: Handle File Requests by ID and Range ---
+  Future<void> _handleFileRequest(HttpRequest request) async {
+    final fileId = request.uri.queryParameters['id'];
+    // Optional: could use receiverId for logging/tracking active downloads server-side
+    // final receiverId = request.uri.queryParameters['receiverId'];
 
-    if (filePath.isEmpty) {
-      debugPrint("P2P Transport Host: FilePath not found in file request.");
+    if (fileId == null || fileId.isEmpty) {
+      debugPrint("P2P Transport Host: File request missing ID.");
       request.response
         ..statusCode = HttpStatus.badRequest
-        ..write('FilePath not found in request')
-        ..close();
-      return;
-    }
-    if (!_filePaths.contains(filePath)) {
-      debugPrint("P2P Transport Host: File request is not allowed.");
-      request.response
-        ..statusCode = HttpStatus.forbidden
-        ..write('File request is not allowed')
+        ..write('File ID parameter is required.')
         ..close();
       return;
     }
 
-    // Serve the file
-    File file = File(filePath);
-    FileStat fileStat = await file.stat();
-    request.response
-      ..headers.add('content-length', fileStat.size.toString())
-      ..headers.add('content-type', 'application/octet-stream')
-      ..headers.add('content-disposition',
-          'attachment; filename=${filePath.split('/').last}')
-      ..addStream(File(filePath).openRead())
-      ..close();
+    final hostedFile = _hostedFiles[fileId];
+    if (hostedFile == null) {
+      debugPrint(
+          "P2P Transport Host: Requested file ID not found or not hosted: $fileId");
+      request.response
+        ..statusCode = HttpStatus.notFound
+        ..write('File not found or access denied.')
+        ..close();
+      return;
+    }
+
+    final filePath = hostedFile.localPath;
+    final file = File(filePath);
+    if (!await file.exists()) {
+      debugPrint(
+          "P2P Transport Host: Hosted file path not found on disk: $filePath (ID: $fileId)");
+      _hostedFiles.remove(fileId); // Clean up broken entry
+      request.response
+        ..statusCode = HttpStatus.internalServerError // Or Not Found
+        ..write('File data is unavailable.')
+        ..close();
+      return;
+    }
+
+    final fileStat = await file.stat();
+    final totalSize = fileStat.size;
+    final response = request.response;
+
+    // Default headers
+    response.headers.contentType = ContentType.binary;
+    response.headers.add(HttpHeaders.contentDisposition,
+        'attachment; filename="${Uri.encodeComponent(hostedFile.info.name)}"'); // Use original name
+    response.headers
+        .add(HttpHeaders.acceptRangesHeader, 'bytes'); // Indicate range support
+
+    // Check for Range header
+    final rangeHeader = request.headers.value(HttpHeaders.rangeHeader);
+    int rangeStart = 0;
+    int? rangeEnd; // Inclusive end
+
+    if (rangeHeader != null && rangeHeader.startsWith('bytes=')) {
+      try {
+        final rangeValues = rangeHeader.substring(6).split('-');
+        rangeStart = int.parse(rangeValues[0]);
+        if (rangeValues[1].isNotEmpty) {
+          rangeEnd = int.parse(rangeValues[1]);
+        }
+
+        // Validate range
+        if (rangeStart < 0 ||
+            rangeStart >= totalSize ||
+            (rangeEnd != null &&
+                (rangeEnd < rangeStart || rangeEnd >= totalSize))) {
+          throw const FormatException('Invalid range');
+        }
+
+        // Adjust end range if requesting 'bytes=1000-'
+        rangeEnd ??= totalSize - 1;
+
+        final rangeLength = (rangeEnd - rangeStart) + 1;
+
+        debugPrint(
+            "P2P Transport Host: Serving range $rangeStart-$rangeEnd (length $rangeLength) for file $fileId");
+
+        response.statusCode = HttpStatus.partialContent;
+        response.headers.contentLength = rangeLength;
+        response.headers.add(HttpHeaders.contentRangeHeader,
+            'bytes $rangeStart-$rangeEnd/$totalSize');
+
+        // Stream the specified range
+        final stream = file.openRead(
+            rangeStart, rangeEnd + 1); // openRead end is exclusive
+        await response.addStream(stream);
+      } catch (e) {
+        debugPrint(
+            "P2P Transport Host: Invalid Range header '$rangeHeader': $e");
+        response
+          ..statusCode = HttpStatus.requestedRangeNotSatisfiable
+          ..headers.add(HttpHeaders.contentRangeHeader,
+              'bytes */$totalSize') // Indicate valid range is 0 to totalSize-1
+          ..write('Invalid byte range requested.')
+          ..close();
+        return; // Stop processing
+      }
+    } else {
+      debugPrint(
+          "P2P Transport Host: Serving full file $fileId (${hostedFile.info.name})");
+      // Serve the full file
+      response.statusCode = HttpStatus.ok;
+      response.headers.contentLength = totalSize;
+      final stream = file.openRead();
+      await response.addStream(stream);
+    }
+
+    try {
+      await response.close();
+      debugPrint(
+          "P2P Transport Host: Finished sending file/range for $fileId.");
+    } catch (e) {
+      // Client might have disconnected during transfer
+      debugPrint(
+          "P2P Transport Host: Error closing response stream for $fileId: $e");
+    }
   }
 
-  /// Broadcasts a [message] to all connected clients.
-  ///
-  /// - [message]: The [P2pMessage] to send.
-  /// - [excludeClientIds]: Optional IDs of clients to exclude from the broadcast (e.g., the original sender).
+  // --- New: Method to Share a File ---
+  Future<P2pFileInfo?> shareFile(String filePath,
+      {List<P2pClientInfo>? recipients}) async {
+    if (_server == null || _portInUse == null) {
+      debugPrint("P2P Transport Host: Cannot share file, server not running.");
+      return null;
+    }
+
+    final file = File(filePath);
+    if (!await file.exists()) {
+      debugPrint(
+          "P2P Transport Host: Cannot share file, path does not exist: $filePath");
+      return null;
+    }
+
+    final fileStat = await file.stat();
+    final fileId = const Uuid().v4();
+    final fileName = p.basename(filePath); // Get filename from path
+
+    // --- Determine Host IP ---
+    // This needs to be a specific IP reachable by clients, not '0.0.0.0'
+    String? reachableHostIp;
+    try {
+      // Prioritize non-loopback IPv4 addresses
+      final interfaces = await NetworkInterface.list(
+          includeLoopback: false, type: InternetAddressType.IPv4);
+      if (interfaces.isNotEmpty) {
+        reachableHostIp = interfaces.first.addresses.first.address;
+      } else {
+        // Fallback: Try loopback if no others found (for local testing)
+        final loopback = await NetworkInterface.list(
+            includeLoopback: true, type: InternetAddressType.IPv4);
+        if (loopback.isNotEmpty) {
+          reachableHostIp = loopback.first.addresses.first.address;
+        }
+      }
+    } catch (e) {
+      debugPrint("P2P Transport Host: Error getting network interfaces: $e");
+    }
+    // Last resort fallback
+    reachableHostIp ??=
+        _server?.address.address ?? InternetAddress.anyIPv4.address;
+    // --- End Determine Host IP ---
+
+    final fileInfo = P2pFileInfo(
+        id: fileId,
+        name: fileName,
+        size: fileStat.size,
+        senderId: hostId, // Host is the sender
+        senderHostIp: reachableHostIp, // Use the determined IP
+        senderPort: _portInUse!,
+        metadata: {
+          'shared_at': DateTime.now().toIso8601String()
+        } // Example metadata
+        );
+
+    // Determine recipients: if null, send to all; otherwise, use the list
+    final targetClients =
+        recipients ?? _clients.values.map((c) => c.info).toList();
+    final recipientIds = targetClients.map((c) => c.id).toList();
+
+    // Store the file locally for serving
+    _hostedFiles[fileId] = HostedFileInfo(
+      info: fileInfo,
+      localPath: filePath,
+      recipientIds: recipientIds, // Track intended recipients
+    );
+    debugPrint(
+        "P2P Transport Host: Hosting file '${fileInfo.name}' (ID: $fileId) for ${recipientIds.length} recipients.");
+
+    // Create the message
+    final payload = P2pMessagePayload(files: [fileInfo]);
+    final message = P2pMessage(
+      senderId: hostId,
+      type: P2pMessageType.payload,
+      payload: payload,
+      clients: targetClients, // Target specific clients
+    );
+
+    // Send the message only to the specified recipients
+    await broadcast(message, includeClientIds: recipientIds);
+
+    return fileInfo; // Return info for potential local UI use
+  }
+
+  /// Broadcasts a [message] to clients.
+  /// Can specify EITHER [excludeClientIds] OR [includeClientIds].
   Future<void> broadcast(P2pMessage message,
-      {List<String>? excludeClientIds}) async {
-    if (_server == null) {
-      debugPrint("P2P Transport Host: Cannot broadcast, server not running.");
+      {List<String>? excludeClientIds, List<String>? includeClientIds}) async {
+    if (_server == null) return;
+    if (excludeClientIds != null && includeClientIds != null) {
+      debugPrint(
+          "P2P Transport Host: Cannot specify both include and exclude client IDs for broadcast.");
       return;
     }
+
     final msgString = message.toJsonString();
     int sentCount = 0;
     _clients.forEach((clientId, clientData) {
-      if (excludeClientIds?.contains(clientId) != true &&
-          clientData.socket.readyState == WebSocket.open) {
+      bool shouldSend = true;
+      if (excludeClientIds?.contains(clientId) == true) {
+        shouldSend = false;
+      }
+      if (includeClientIds != null && !includeClientIds.contains(clientId)) {
+        shouldSend = false;
+      }
+
+      if (shouldSend && clientData.socket.readyState == WebSocket.open) {
         try {
           clientData.socket.add(msgString);
           sentCount++;
         } catch (e) {
           debugPrint(
               "P2P Transport Host: Error sending broadcast to ${clientData.info.username} ($clientId): $e");
-          // Consider removing client if sending fails repeatedly
         }
       }
     });
-    debugPrint(
-        "P2P Transport Host: Broadcast message type '${message.type}' to $sentCount clients.");
+    if (sentCount > 0) {
+      debugPrint(
+          "P2P Transport Host: Sent message type '${message.type}' to $sentCount clients.");
+    }
   }
 
-  /// Sends a [message] to a specific client identified by [clientId].
-  ///
-  /// - [clientId]: The target client's ID (its hash code string).
-  /// - [message]: The [P2pMessage] to send.
-  ///
-  /// Returns `true` if the client was found and message was sent, `false` otherwise.
   Future<bool> sendToClient(String clientId, P2pMessage message) async {
-    if (_server == null) {
-      debugPrint("P2P Transport Host: Cannot send, server not running.");
-      return false;
-    }
+    // This might be less used now with targeted broadcasts, but keep it
+    if (_server == null) return false;
     final clientData = _clients[clientId];
     if (clientData != null && clientData.socket.readyState == WebSocket.open) {
       try {
@@ -524,34 +960,22 @@ class P2pTransportHost {
             "P2P Transport Host: Error sending direct message to ${clientData.info.username} ($clientId): $e");
         return false;
       }
-    } else {
-      debugPrint("P2P Transport Host: Client $clientId not found or not open.");
-      return false;
     }
+    return false;
   }
 
-  /// Stops the WebSocket server, closes all client connections, and closes streams.
   Future<void> stop() async {
     debugPrint("P2P Transport Host: Stopping server...");
-    // Close stream controllers first to prevent adding events during shutdown
-    // Check if controllers are closed before closing them
-    if (!_receivedPayloadsController.isClosed) {
-      await _receivedPayloadsController.close();
-    }
-    if (!_clientListController.isClosed) {
-      await _clientListController.close();
-    }
+    await _receivedPayloadsController.close();
+    await _clientListController.close();
+    await _fileProgressController.close(); // Close file progress stream
 
-    // Close all client connections
     for (var clientData in _clients.values) {
-      await clientData.socket.close().catchError((e) {
-        debugPrint(
-            "P2P Transport Host: Error closing client socket for ${clientData.info.username}: $e");
-      });
+      await clientData.socket.close().catchError((_) {});
     }
     _clients.clear();
+    _hostedFiles.clear(); // Clear hosted files on stop
 
-    // Close the server itself
     await _server?.close(force: true);
     _server = null;
     _portInUse = null;
@@ -559,238 +983,807 @@ class P2pTransportHost {
   }
 }
 
-/// The client class for P2P transport using WebSockets.
-///
-/// It attempts to establish a connection to the server at [hostIp], starting
-/// from [defaultPort] and trying subsequent ports if the connection fails.
+// --- P2pTransportClient ---
 class P2pTransportClient {
   final String hostIp;
-  final int defaultPort;
-  final String username; // Client's username
-  final String clientId = const Uuid().v4(); // Client's random id
+  final int defaultPort; // WebSocket server port
+  final int defaultFilePort; // Port for THIS client's file server
+  final String username;
+  final String clientId = const Uuid().v4();
   WebSocket? _socket;
   bool _isConnected = false;
-  bool _isConnecting = false; // Flag to prevent concurrent connection attempts
+  bool _isConnecting = false;
   StreamSubscription? _socketSubscription;
-  List<P2pClientInfo> _clientList = []; // Store the client info list
+  List<P2pClientInfo> _clientList = [];
 
-  /// Stream controller for consuming messages received from the server.
+  // --- Client-Side File Server ---
+  HttpServer? _fileServer;
+  int? _fileServerPortInUse;
+  // Map: File ID -> HostedFileInfo (for files THIS client shares)
+  final Map<String, HostedFileInfo> _hostedFiles = {};
+  // Stream controller for notifying UI about sender-side progress updates (for files THIS client sends)
+  final StreamController<FileShareProgressUpdate> _fileShareProgressController =
+      StreamController<FileShareProgressUpdate>.broadcast();
+  // --- End Client-Side File Server ---
+
+  // --- File Receiving State ---
+  // Map: File ID -> ReceivableFileInfo
+  final Map<String, ReceivableFileInfo> _receivableFiles = {};
+  // Stream controller for notifying UI about download progress
+  final StreamController<FileDownloadProgressUpdate>
+      _downloadProgressController =
+      StreamController<FileDownloadProgressUpdate>.broadcast();
+  // --- End File Receiving State ---
+
   final StreamController<P2pMessagePayload> _receivedPayloadsController =
       StreamController<P2pMessagePayload>.broadcast();
-
-  /// Stream controller for broadcasting client connection/disconnection events.
-  /// Emits the current list of [P2pClientInfo] objects.
   final StreamController<List<P2pClientInfo>> _clientListController =
       StreamController<List<P2pClientInfo>>.broadcast();
 
-  /// Returns `true` if the client is currently connected to the server.
   bool get isConnected => _isConnected && _socket?.readyState == WebSocket.open;
-
-  /// Public list of the connected clients (including host) as last reported by the server.
   List<P2pClientInfo> get clientList => _clientList;
+  int? get fileServerPort => _fileServerPortInUse; // Expose file server port
+  List<P2pFileInfo> get hostedFileInfos =>
+      _hostedFiles.values.map((hf) => hf.info).toList();
+  List<ReceivableFileInfo> get receivableFileInfos =>
+      _receivableFiles.values.toList();
 
-  /// Public stream of messages received from the server.
   Stream<P2pMessagePayload> get receivedPayloadsStream =>
       _receivedPayloadsController.stream;
-
-  /// Public stream emitting the updated list of connected client information whenever a
-  /// client connects or disconnects (as reported by the server). Includes the host.
   Stream<List<P2pClientInfo>> get clientListStream =>
       _clientListController.stream;
+  Stream<FileShareProgressUpdate> get fileShareProgressStream =>
+      _fileShareProgressController
+          .stream; // Sender progress (files shared by this client)
+  Stream<FileDownloadProgressUpdate> get downloadProgressStream =>
+      _downloadProgressController
+          .stream; // Receiver progress (files downloaded by this client)
 
-  P2pTransportClient(
-      {required this.hostIp,
-      required this.defaultPort,
-      required this.username});
+  P2pTransportClient({
+    required this.hostIp,
+    required this.defaultPort,
+    required this.defaultFilePort, // Need default port for file server
+    required this.username,
+  });
 
-  /// Attempts to connect to the host WebSocket server.
-  ///
-  /// Tries to connect to [hostIp] starting at [defaultPort], incrementing the port
-  /// up to 10 times if the connection fails. Includes the client's [username]
-  /// in the connection URL query parameters.
-  ///
-  /// Throws an [Exception] if unable to connect to any port in the range.
-  Future<void> connect() async {
-    if (isConnected || _isConnecting) {
-      debugPrint("P2P Transport Client: Already connected or connecting.");
+  // --- New: Start the client's dedicated file server ---
+  Future<bool> _startFileServer() async {
+    if (_fileServer != null) {
+      debugPrint(
+          "P2P Transport Client [$username]: File server already running on $_fileServerPortInUse.");
+      return true;
+    }
+
+    int attempts = 0;
+    int port = defaultFilePort;
+    while (attempts < 10) {
+      try {
+        // Use anyIPv4 for binding
+        _fileServer = await HttpServer.bind(InternetAddress.anyIPv4, port);
+        _fileServerPortInUse = port;
+        debugPrint(
+            "P2P Transport Client [$username]: File server started on port $_fileServerPortInUse");
+
+        _fileServer!.listen(
+          (HttpRequest request) async {
+            final path = request.requestedUri.path;
+            debugPrint(
+                "P2P Transport Client [$username]: File server received request for $path");
+            if (path == '/file' && request.method == 'GET') {
+              await _handleFileRequest(
+                  request); // Use the same handler logic as host
+            } else {
+              debugPrint(
+                  "P2P Transport Client [$username]: File server received invalid request ${request.method} ${request.uri}");
+              request.response
+                ..statusCode = HttpStatus.notFound // Or MethodNotAllowed
+                ..write("Resource not found.")
+                ..close();
+            }
+          },
+          onError: (error) {
+            debugPrint(
+                "P2P Transport Client [$username]: File server error: $error");
+            // Consider attempting to restart?
+          },
+          onDone: () {
+            debugPrint(
+                "P2P Transport Client [$username]: File server stopped listening.");
+            _fileServerPortInUse = null;
+          },
+        );
+        return true; // Success
+      } on SocketException catch (e) {
+        if (e.osError?.errorCode == 98 ||
+            e.osError?.errorCode == 48 ||
+            e.message.contains('errno = 98') ||
+            e.message.contains('errno = 48')) {
+          debugPrint(
+              "P2P Transport Client [$username]: File server port $port in use, trying next...");
+          port++;
+          attempts++;
+        } else {
+          debugPrint(
+              "P2P Transport Client [$username]: Error binding file server: $e");
+          return false; // Failed to bind
+        }
+      } catch (e) {
+        debugPrint(
+            "P2P Transport Client [$username]: Unexpected error starting file server: $e");
+        return false; // Failed for other reason
+      }
+    }
+    debugPrint(
+        "P2P Transport Client [$username]: Could not bind file server to any port in range $defaultFilePort-${port - 1}.");
+    return false; // Failed after retries
+  }
+
+  // --- New: Stop the client's file server ---
+  Future<void> _stopFileServer() async {
+    if (_fileServer != null) {
+      debugPrint("P2P Transport Client [$username]: Stopping file server...");
+      await _fileServer?.close(force: true);
+      _fileServer = null;
+      _fileServerPortInUse = null;
+      _hostedFiles.clear(); // Clear files hosted by this client
+      debugPrint("P2P Transport Client [$username]: File server stopped.");
+    }
+  }
+
+  // --- Share the same file handling logic as Host ---
+  // (Copied and adapted slightly for client context)
+  Future<void> _handleFileRequest(HttpRequest request) async {
+    final fileId = request.uri.queryParameters['id'];
+    if (fileId == null || fileId.isEmpty) {
+      request.response
+        ..statusCode = HttpStatus.badRequest
+        ..write('File ID parameter is required.')
+        ..close();
       return;
     }
+    final hostedFile =
+        _hostedFiles[fileId]; // Check files hosted by THIS client
+    if (hostedFile == null) {
+      request.response
+        ..statusCode = HttpStatus.notFound
+        ..write('File not found or access denied.')
+        ..close();
+      return;
+    }
+    final filePath = hostedFile.localPath;
+    final file = File(filePath);
+    if (!await file.exists()) {
+      _hostedFiles.remove(fileId); // Clean up
+      request.response
+        ..statusCode = HttpStatus.internalServerError
+        ..write('File data is unavailable.')
+        ..close();
+      return;
+    }
+
+    final fileStat = await file.stat();
+    final totalSize = fileStat.size;
+    final response = request.response;
+    response.headers.contentType = ContentType.binary;
+    response.headers.add(HttpHeaders.contentDisposition,
+        'attachment; filename="${Uri.encodeComponent(hostedFile.info.name)}"');
+    response.headers.add(HttpHeaders.acceptRangesHeader, 'bytes');
+
+    final rangeHeader = request.headers.value(HttpHeaders.rangeHeader);
+    int rangeStart = 0;
+    int? rangeEnd;
+    bool isRangeRequest = false;
+
+    if (rangeHeader != null && rangeHeader.startsWith('bytes=')) {
+      try {
+        final rangeValues = rangeHeader.substring(6).split('-');
+        rangeStart = int.parse(rangeValues[0]);
+        if (rangeValues[1].isNotEmpty) rangeEnd = int.parse(rangeValues[1]);
+        if (rangeStart < 0 ||
+            rangeStart >= totalSize ||
+            (rangeEnd != null &&
+                (rangeEnd < rangeStart || rangeEnd >= totalSize))) {
+          throw const FormatException('Invalid range');
+        }
+        rangeEnd ??= totalSize - 1;
+        isRangeRequest = true;
+      } catch (e) {
+        response
+          ..statusCode = HttpStatus.requestedRangeNotSatisfiable
+          ..headers.add(HttpHeaders.contentRangeHeader, 'bytes */$totalSize')
+          ..write('Invalid byte range requested.')
+          ..close();
+        return;
+      }
+    }
+
+    if (isRangeRequest) {
+      final rangeLength = (rangeEnd! - rangeStart) + 1;
+      response.statusCode = HttpStatus.partialContent;
+      response.headers.contentLength = rangeLength;
+      response.headers.add(HttpHeaders.contentRangeHeader,
+          'bytes $rangeStart-$rangeEnd/$totalSize');
+      final stream = file.openRead(rangeStart, rangeEnd + 1);
+      await response.addStream(stream);
+    } else {
+      response.statusCode = HttpStatus.ok;
+      response.headers.contentLength = totalSize;
+      final stream = file.openRead();
+      await response.addStream(stream);
+    }
+    try {
+      await response.close();
+    } catch (e) {
+      debugPrint(
+          "P2P Transport Client [$username]: Error closing file response stream for $fileId: $e");
+    }
+  }
+
+  Future<void> connect() async {
+    if (isConnected || _isConnecting) return;
     _isConnecting = true;
+
+    // --- Start file server BEFORE connecting to WebSocket ---
+    // So we can report the file server port during connection
+    bool fileServerStarted = await _startFileServer();
+    if (!fileServerStarted) {
+      _isConnecting = false;
+      throw Exception(
+          "P2P Transport Client [$username]: Failed to start local file server. Cannot connect.");
+    }
+    // --- End Start File Server ---
 
     int attempts = 0;
     int port = defaultPort;
     WebSocket? tempSocket;
 
     while (attempts < 10 && tempSocket == null) {
-      // Add clientId and username to websocket url query parameters
+      // Include file server port in connection URL
       final url = Uri.parse(
-          "ws://$hostIp:$port/connect?id=${Uri.encodeComponent(clientId)}&username=${Uri.encodeComponent(username)}");
+          "ws://$hostIp:$port/connect?id=${Uri.encodeComponent(clientId)}&username=${Uri.encodeComponent(username)}&filePort=$_fileServerPortInUse");
 
       try {
-        debugPrint("P2P Transport Client: Attempting to connect to $url...");
-        // Add a timeout to WebSocket.connect to prevent indefinite hangs
+        debugPrint(
+            "P2P Transport Client [$username]: Attempting WebSocket connect to $url...");
         tempSocket = await WebSocket.connect(url.toString())
             .timeout(const Duration(seconds: 6));
-        debugPrint("P2P Transport Client: Connected to server at $url");
+        debugPrint(
+            "P2P Transport Client [$username]: WebSocket connected to $url");
       } on TimeoutException {
         debugPrint(
-            "P2P Transport Client: Connection attempt to $url timed out.");
+            "P2P Transport Client [$username]: Connection attempt to $url timed out.");
         port++;
         attempts++;
       } on SocketException catch (e) {
         debugPrint(
-            "P2P Transport Client: SocketException connecting to $url: ${e.message}. Trying next port...");
+            "P2P Transport Client [$username]: SocketException connecting to $url: ${e.message}. Trying next...");
         port++;
         attempts++;
       } catch (e) {
         debugPrint(
-            "P2P Transport Client: Error connecting to $url: $e. Trying next port...");
+            "P2P Transport Client [$username]: Error connecting to $url: $e. Trying next...");
         port++;
         attempts++;
-        // Rethrow if it's not a connection error? Maybe not, just keep trying.
       }
     }
 
-    _isConnecting = false; // Finished connection attempts
+    _isConnecting = false;
 
     if (tempSocket == null) {
+      await _stopFileServer(); // Stop file server if WebSocket connection failed
       throw Exception(
-          "P2P Transport Client: Could not connect to server on any port in the range $defaultPort-${port - 1}.");
+          "P2P Transport Client [$username]: Could not connect to WebSocket server at $hostIp on any port in range $defaultPort-${port - 1}.");
     }
 
     _socket = tempSocket;
     _isConnected = true;
-
-    // Cancel any previous subscription before starting a new one
     await _socketSubscription?.cancel();
 
-    // Listen for messages from the server.
     _socketSubscription = _socket!.listen(
       (data) async {
         try {
-          // Assume data is a JSON string representing P2pMessage
           final message = P2pMessage.fromJsonString(data as String);
-          // Add the received message to the public stream.
-          if (message.type == P2pMessageType.clientList) {
-            // Delay before updating client list
-            await Future.delayed(const Duration(milliseconds: 500));
-            // Store the received client list and notify listeners
-            _clientList = message.clients;
-            _clientList.removeWhere(
-                (client) => client.id == clientId); // Remove self from list
-            _clientListController.add(_clientList);
-            debugPrint(
-                "P2P Transport Client: Updated client list: ${_clientList.map((c) => c.username).toList()}");
-            return;
-          }
+          P2pClientInfo? senderInfo = _clientList.firstWhere(
+              (c) => c.id == message.senderId,
+              orElse: () => P2pClientInfo(
+                  id: message.senderId,
+                  username: 'Unknown Sender',
+                  isHost: message.senderId ==
+                      'server')); // Handle sender not in list yet?
 
-          P2pClientInfo? senderInfo = _clientList
-              .where((client) => client.id == message.senderId)
-              .firstOrNull;
-          if (senderInfo == null) {
-            debugPrint(
-                'P2P Transport Client: Received from an unknown client.');
-            return;
-          }
+          switch (message.type) {
+            case P2pMessageType.clientList:
+              // Update local client list (excluding self)
+              final List<P2pClientInfo> receivedList =
+                  List<P2pClientInfo>.from(message.clients);
+              receivedList.removeWhere(
+                  (client) => client.id == clientId); // Remove self
+              _clientList = receivedList;
+              if (!_clientListController.isClosed) {
+                _clientListController.add(_clientList);
+              }
+              debugPrint(
+                  "P2P Transport Client [$username]: Updated client list: ${_clientList.map((c) => c.username).toList()}");
+              break;
 
-          if (message.type == P2pMessageType.payload &&
-              message.payload != null) {
-            _receivedPayloadsController.add(message.payload!);
-            debugPrint(
-                "P2P Transport Client: Received payload from ${senderInfo.username} (${senderInfo.id})");
+            case P2pMessageType.payload:
+              if (message.payload is P2pMessagePayload) {
+                final payload = message.payload as P2pMessagePayload;
+                debugPrint(
+                    "P2P Transport Client [$username]: Received payload from ${senderInfo.username} (${senderInfo.id})");
+
+                // Process received files
+                if (payload.files.isNotEmpty) {
+                  for (var fileInfo in payload.files) {
+                    if (_receivableFiles.containsKey(fileInfo.id)) {
+                      debugPrint(
+                          "P2P Transport Client [$username]: Received duplicate file info for ID ${fileInfo.id}, ignoring.");
+                      continue;
+                    }
+                    _receivableFiles[fileInfo.id] =
+                        ReceivableFileInfo(info: fileInfo);
+                    debugPrint(
+                        "P2P Transport Client [$username]: Added receivable file: ${fileInfo.name} (ID: ${fileInfo.id}) from ${senderInfo.username}");
+                    // TODO: Need a way to notify UI about *new* receivable files, maybe a dedicated stream?
+                    // For now, UI can query receivableFileInfos
+                  }
+                  // Maybe add receivableFiles stream event here
+                }
+
+                // Forward the text/general payload part to the application stream
+                if (!_receivedPayloadsController.isClosed) {
+                  _receivedPayloadsController.add(payload);
+                }
+              } else {
+                debugPrint(
+                    "P2P Transport Client [$username]: Received payload message with incorrect payload type.");
+              }
+              break;
+
+            case P2pMessageType.fileProgressUpdate:
+              // This client receives progress updates for files *it* is sharing
+              if (message.payload is P2pFileProgressUpdate) {
+                _handleFileProgressUpdate(
+                    message.payload as P2pFileProgressUpdate);
+              } else {
+                debugPrint(
+                    "P2P Transport Client [$username]: Received fileProgressUpdate message with incorrect payload type.");
+              }
+              break;
+
+            case P2pMessageType.unknown:
+              debugPrint(
+                  "P2P Transport Client [$username]: Received unknown message type from ${senderInfo.username}");
+              break;
           }
-        } catch (e) {
+        } catch (e, s) {
           debugPrint(
-              "P2P Transport Client: Error parsing server message: $e\nData: $data");
+              "P2P Transport Client [$username]: Error parsing server message: $e\nStack: $s\nData: $data");
         }
       },
       onDone: () {
-        debugPrint("P2P Transport Client: Disconnected from server.");
-        _isConnected = false;
-        _socket = null;
-        _clientList = []; // Clear client list on disconnect
-        if (!_clientListController.isClosed) {
-          _clientListController.add(_clientList); // Notify UI
-        }
-        _socketSubscription = null;
-        // Optionally add a disconnected state to the stream or a separate callback
+        debugPrint(
+            "P2P Transport Client [$username]: WebSocket disconnected from server.");
+        _handleDisconnect();
       },
       onError: (error) {
-        debugPrint("P2P Transport Client: Socket error: $error");
-        _isConnected = false;
-        _socket = null;
-        _clientList = []; // Clear client list on error
-        if (!_clientListController.isClosed) {
-          _clientListController.add(_clientList); // Notify UI
-        }
-        _socketSubscription = null;
-        // Optionally add an error state to the stream
+        debugPrint("P2P Transport Client [$username]: WebSocket error: $error");
+        _handleDisconnect(); // Treat error as disconnect
       },
-      cancelOnError: true, // Close stream on error
+      cancelOnError: true,
     );
 
     debugPrint(
-        'P2P Transport Client: Connection established and listener set up.');
+        'P2P Transport Client [$username]: Connection established and listener set up.');
   }
 
-  /// Sends a [message] to the host server.
-  ///
-  /// Returns `true` if the message was sent, `false` if the socket is not connected.
+  // Common logic for handling disconnection or socket error
+  Future<void> _handleDisconnect() async {
+    _isConnected = false;
+    _socket = null; // Already closed or errored
+    await _socketSubscription?.cancel();
+    _socketSubscription = null;
+
+    _clientList = []; // Clear client list
+    if (!_clientListController.isClosed) {
+      _clientListController.add(_clientList); // Notify UI
+    }
+    // Stop the file server when disconnected from the main host
+    await _stopFileServer();
+    // Clear receivable files? Or keep them? Decide based on desired behavior.
+    // _receivableFiles.clear();
+    // if (!_downloadProgressController.isClosed) { /* Notify UI about cleared downloads? */ }
+    debugPrint(
+        "P2P Transport Client [$username]: Cleaned up after disconnect.");
+  }
+
+  // --- Handle received progress updates (for files shared BY THIS client) ---
+  void _handleFileProgressUpdate(P2pFileProgressUpdate progressUpdate) {
+    final fileInfo = _hostedFiles[progressUpdate.fileId];
+    if (fileInfo != null) {
+      if (fileInfo.downloadProgressBytes
+          .containsKey(progressUpdate.receiverId)) {
+        final bool changed = fileInfo.updateProgress(
+            progressUpdate.receiverId, progressUpdate.bytesDownloaded);
+        debugPrint(
+            "P2P Transport Client [$username]: Progress update for shared file ${fileInfo.info.name} from ${progressUpdate.receiverId}: ${progressUpdate.bytesDownloaded}/${fileInfo.info.size} bytes.");
+
+        if (changed && !_fileShareProgressController.isClosed) {
+          final percent =
+              fileInfo.getProgressPercent(progressUpdate.receiverId);
+          _fileShareProgressController.add(FileShareProgressUpdate(
+            fileId: progressUpdate.fileId,
+            receiverId: progressUpdate.receiverId,
+            progressPercent: percent,
+            bytesDownloaded: progressUpdate.bytesDownloaded,
+            totalSize: fileInfo.info.size,
+          ));
+        }
+      } else {
+        debugPrint(
+            "P2P Transport Client [$username]: Received progress update from non-recipient ${progressUpdate.receiverId} for file ${progressUpdate.fileId}");
+      }
+    } else {
+      debugPrint(
+          "P2P Transport Client [$username]: Received progress update for unknown/unhosted file ID: ${progressUpdate.fileId}");
+    }
+  }
+
+  // --- New: Share a file from the client ---
+  Future<P2pFileInfo?> shareFile(String filePath,
+      {List<P2pClientInfo>? recipients}) async {
+    if (!isConnected) {
+      debugPrint(
+          "P2P Transport Client [$username]: Cannot share file, not connected to host.");
+      return null;
+    }
+    if (_fileServer == null || _fileServerPortInUse == null) {
+      debugPrint(
+          "P2P Transport Client [$username]: Cannot share file, local file server is not running.");
+      return null;
+    }
+
+    final file = File(filePath);
+    if (!await file.exists()) {
+      debugPrint(
+          "P2P Transport Client [$username]: Cannot share file, path does not exist: $filePath");
+      return null;
+    }
+
+    final fileStat = await file.stat();
+    final fileId = const Uuid().v4();
+    final fileName = p.basename(filePath);
+
+    // --- Determine Client's Reachable IP ---
+    // This is tricky. We need an IP the *other* clients/host can reach.
+    String? reachableClientIp;
+    try {
+      final interfaces = await NetworkInterface.list(
+          includeLoopback: false, type: InternetAddressType.IPv4);
+      if (interfaces.isNotEmpty) {
+        reachableClientIp = interfaces.first.addresses.first.address;
+      } else {
+        final loopback = await NetworkInterface.list(
+            includeLoopback: true, type: InternetAddressType.IPv4);
+        if (loopback.isNotEmpty) {
+          reachableClientIp = loopback.first.addresses.first.address;
+        }
+      }
+    } catch (e) {
+      debugPrint(
+          "P2P Transport Client [$username]: Error getting network interfaces: $e");
+    }
+    reachableClientIp ??=
+        InternetAddress.anyIPv4.address; // Fallback ip address
+    // --- End Determine Client's IP ---
+
+    final fileInfo = P2pFileInfo(
+        id: fileId,
+        name: fileName,
+        size: fileStat.size,
+        senderId: clientId, // This client is the sender
+        senderHostIp: reachableClientIp, // Use this client's IP
+        senderPort: _fileServerPortInUse!, // Use this client's file server port
+        metadata: {'shared_at': DateTime.now().toIso8601String()});
+
+    // Determine recipients: if null, send to *all* others (including host)
+    final List<P2pClientInfo> targetClients;
+    if (recipients == null) {
+      // Send to everyone currently known (host + other clients)
+      targetClients = List.from(_clientList); // Makes a copy
+    } else {
+      targetClients = recipients;
+    }
+    final recipientIds = targetClients.map((c) => c.id).toList();
+
+    // Store locally for serving via this client's HTTP server
+    _hostedFiles[fileId] = HostedFileInfo(
+      info: fileInfo,
+      localPath: filePath,
+      recipientIds: recipientIds, // Track intended recipients
+    );
+    debugPrint(
+        "P2P Transport Client [$username]: Hosting file '${fileInfo.name}' (ID: $fileId) for ${recipientIds.length} recipients.");
+
+    // Create the message payload
+    final payload = P2pMessagePayload(files: [fileInfo]);
+    final message = P2pMessage(
+      senderId: clientId,
+      type: P2pMessageType.payload,
+      payload: payload,
+      clients:
+          targetClients, // IMPORTANT: Tell the host who should receive this
+    );
+
+    // Send the message TO THE HOST, which will relay it to the target clients
+    bool sent = await send(message);
+
+    return sent ? fileInfo : null;
+  }
+
+  // --- New: Download a file ---
+  Future<bool> downloadFile(
+    String fileId,
+    String saveDirectory, {
+    String? customFileName,
+    Function(FileDownloadProgressUpdate)? onProgress, // Callback for progress
+    // Optional range parameters (for resuming/chunking in the future)
+    int? rangeStart,
+    int? rangeEnd,
+  }) async {
+    final receivable = _receivableFiles[fileId];
+    if (receivable == null) {
+      debugPrint(
+          "P2P Transport Client [$username]: Cannot download file, ID not found in receivable list: $fileId");
+      return false;
+    }
+
+    final fileInfo = receivable.info;
+    final url = Uri.parse(
+        'http://${fileInfo.senderHostIp}:${fileInfo.senderPort}/file?id=$fileId&receiverId=$clientId'); // Include receiverId
+    final finalFileName = customFileName ?? fileInfo.name;
+    final savePath = p.join(saveDirectory, finalFileName);
+    receivable.savePath = savePath; // Store where we are saving it
+
+    debugPrint(
+        "P2P Transport Client [$username]: Starting download for '${fileInfo.name}' (ID: $fileId) from $url to $savePath");
+
+    // Ensure directory exists
+    try {
+      final dir = Directory(saveDirectory);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+    } catch (e) {
+      debugPrint(
+          "P2P Transport Client [$username]: Error creating save directory '$saveDirectory': $e");
+      return false;
+    }
+
+    final client = http.Client();
+    int totalBytes = fileInfo.size;
+    int bytesReceived = 0;
+    IOSink? fileSink; // Use IOSink for more control
+
+    try {
+      final request = http.Request('GET', url);
+      // --- Add Range Header if specified ---
+      bool isRangeRequest = false;
+      if (rangeStart != null) {
+        String rangeValue = 'bytes=$rangeStart-';
+        if (rangeEnd != null) {
+          rangeValue += rangeEnd.toString();
+        }
+        request.headers[HttpHeaders.rangeHeader] = rangeValue;
+        isRangeRequest = true;
+        debugPrint(
+            "P2P Transport Client [$username]: Requesting range: ${request.headers[HttpHeaders.rangeHeader]}");
+        // If resuming, bytesReceived should start from rangeStart
+        bytesReceived = rangeStart;
+      }
+      // --- End Range Header ---
+
+      final response = await client.send(request);
+
+      if (response.statusCode != HttpStatus.ok &&
+          response.statusCode != HttpStatus.partialContent) {
+        debugPrint(
+            "P2P Transport Client [$username]: Download failed for $fileId. Server responded with status ${response.statusCode}");
+        final body = await response.stream.bytesToString();
+        debugPrint(
+            "P2P Transport Client [$username]: Server error body: $body");
+        return false;
+      }
+
+      // Adjust totalBytes if it's a range request and Content-Range is present
+      final contentRange = response.headers[HttpHeaders.contentRangeHeader];
+      if (contentRange != null && contentRange.contains('/')) {
+        try {
+          totalBytes = int.parse(contentRange.split('/').last);
+          // Update the stored size if the server reports a different one (maybe?)
+          // receivable.info = receivable.info.copyWith(size: totalBytes); // Need copyWith in P2pFileInfo
+        } catch (e) {
+          debugPrint(
+              "P2P Transport Client [$username]: Could not parse total size from Content-Range: $contentRange");
+          // Keep original size as fallback
+        }
+      } else if (isRangeRequest) {
+        debugPrint(
+            "P2P Transport Client [$username]: Range request successful but Content-Range header missing or invalid.");
+        // Cannot reliably track progress percentage without total size
+      }
+
+      // Open file sink. Use append mode if resuming (isRangeRequest and rangeStart > 0)
+      // IMPORTANT: For robust resume, you'd need to check if the file exists and its size matches rangeStart.
+      // For simplicity here, we just append if it's a range request starting > 0.
+      final fileMode = (isRangeRequest && rangeStart! > 0)
+          ? FileMode.writeOnlyAppend
+          : FileMode.writeOnly;
+      final file = File(savePath);
+      fileSink = file.openWrite(mode: fileMode);
+
+      // Timer for periodic progress updates to avoid spamming
+      Timer? progressUpdateTimer;
+      int lastReportedBytes = bytesReceived;
+
+      // Function to report progress
+      void reportProgress() {
+        if (totalBytes > 0) {
+          double percent = (bytesReceived / totalBytes) * 100.0;
+          // Clamp percentage between 0 and 100
+          percent = max(0.0, min(100.0, percent));
+          receivable.downloadProgressPercent = percent;
+
+          final updateData = FileDownloadProgressUpdate(
+            fileId: fileId,
+            progressPercent: percent,
+            bytesDownloaded: bytesReceived,
+            totalSize: totalBytes,
+            savePath: savePath,
+          );
+
+          onProgress?.call(updateData); // Call the callback
+          if (!_downloadProgressController.isClosed) {
+            _downloadProgressController.add(updateData); // Emit to stream
+          }
+
+          // Send progress update back to the original sender via WebSocket
+          // Send updates less frequently (e.g., every 5% or every 500ms)
+          if (bytesReceived > lastReportedBytes) {
+            //&& (percent % 5 < 0.5 || bytesReceived == totalBytes)) { // Example throttling
+            _sendProgressUpdateToServer(
+                fileId, fileInfo.senderId, bytesReceived);
+            lastReportedBytes = bytesReceived;
+          }
+        }
+      }
+
+      // Start periodic reporting
+      progressUpdateTimer = Timer.periodic(
+          const Duration(milliseconds: 500), (_) => reportProgress());
+
+      await response.stream.listen(
+        (List<int> chunk) {
+          fileSink?.add(chunk);
+          bytesReceived += chunk.length;
+          reportProgress(); // Report after each chunk for now
+        },
+        onDone: () async {
+          debugPrint(
+              "P2P Transport Client [$username]: Download stream finished for $fileId.");
+          await fileSink?.flush();
+          await fileSink?.close();
+          progressUpdateTimer?.cancel();
+          reportProgress(); // Ensure final progress (100%) is reported
+          debugPrint(
+              "P2P Transport Client [$username]: Download complete for $fileId. Saved to $savePath");
+        },
+        onError: (e) {
+          debugPrint(
+              "P2P Transport Client [$username]: Error during download stream for $fileId: $e");
+          progressUpdateTimer?.cancel();
+          fileSink?.close().catchError((_) {}); // Try to close sink on error
+          // Set error state?
+        },
+        cancelOnError: true,
+      ).asFuture(); // Wait for the stream listener to complete or error out
+
+      // Check final size if not a range request?
+      if (!isRangeRequest) {
+        final savedFileStat = await File(savePath).stat();
+        if (savedFileStat.size != totalBytes) {
+          debugPrint(
+              "P2P Transport Client [$username]: Warning: Final file size (${savedFileStat.size}) does not match expected size ($totalBytes) for $fileId");
+        }
+      }
+    } catch (e, s) {
+      debugPrint(
+          "P2P Transport Client [$username]: Error downloading file $fileId: $e\nStack: $s");
+      await fileSink
+          ?.close()
+          .catchError((_) {}); // Ensure sink is closed on error
+      // Clean up partially downloaded file
+      // ignore: body_might_complete_normally_catch_error
+      await File(savePath).delete().catchError((_) async {});
+      return false;
+    } finally {
+      client.close();
+    }
+
+    return true; // Assume success if no exceptions were thrown and stream completed
+  }
+
+  // Helper to send progress update message to the server
+  Future<void> _sendProgressUpdateToServer(
+      String fileId, String originalSenderId, int bytesDownloaded) async {
+    if (!isConnected) return;
+
+    final progressPayload = P2pFileProgressUpdate(
+      fileId: fileId,
+      receiverId: clientId, // This client is the receiver reporting progress
+      bytesDownloaded: bytesDownloaded,
+    );
+
+    final message = P2pMessage(
+      senderId: clientId,
+      type: P2pMessageType.fileProgressUpdate,
+      payload: progressPayload,
+      // Target: Although the server routes this, specifying the original sender might be good practice?
+      // However, the server knows where to route based on the fileId lookup.
+      // Let's omit clients field for progress updates for simplicity. Server handles routing.
+      clients: const [], // Server will route based on fileId owner
+    );
+
+    // Send the progress update TO THE HOST
+    debugPrint(
+        "P2P Transport Client [$username]: Sending progress update: $bytesDownloaded bytes for $fileId");
+    await send(message);
+  }
+
+  /// Sends a [message] TO THE HOST server. The host relays messages to other clients.
   Future<bool> send(P2pMessage message) async {
-    if (isConnected) {
+    if (isConnected && _socket != null) {
       try {
         _socket!.add(message.toJsonString());
-        debugPrint(
-            "P2P Transport Client: Sent message type '${message.type}' to server.");
+        // Avoid logging overly verbose messages like progress updates frequently
+        if (message.type != P2pMessageType.fileProgressUpdate) {
+          debugPrint(
+              "P2P Transport Client [$username]: Sent message type '${message.type}' to host.");
+        }
         return true;
       } catch (e) {
-        debugPrint("P2P Transport Client: Error sending message: $e");
+        debugPrint(
+            "P2P Transport Client [$username]: Error sending message: $e");
         // Consider attempting to reconnect or marking as disconnected
-        _isConnected = false;
-        await disconnect(); // Attempt cleanup
+        await _handleDisconnect(); // Treat send error as disconnect
         return false;
       }
     } else {
       debugPrint(
-          "P2P Transport Client: Cannot send message, socket not connected.");
+          "P2P Transport Client [$username]: Cannot send message, socket not connected.");
       return false;
     }
   }
 
-  /// Disconnects from the host server and closes streams.
   Future<void> disconnect() async {
-    debugPrint("P2P Transport Client: Disconnecting...");
-    // Cancel listener first
+    debugPrint("P2P Transport Client [$username]: Disconnecting...");
     await _socketSubscription?.cancel();
     _socketSubscription = null;
-
-    // Close socket
-    await _socket?.close().catchError((e) {
-      debugPrint("P2P Transport Client: Error closing socket: $e");
-    });
-    _socket = null;
-    _isConnected = false;
-
-    // Clear client list and notify
-    _clientList.clear();
-    if (!_clientListController.isClosed) {
-      _clientListController.add(_clientList); // Notify UI
-    }
-
-    debugPrint("P2P Transport Client: Disconnected.");
+    await _socket?.close().catchError((_) {}); // Ignore errors on close
+    await _handleDisconnect(); // Perform cleanup
+    debugPrint("P2P Transport Client [$username]: Disconnected.");
   }
 
-  /// Cleans up resources, including closing the stream controllers. Call this
-  /// when the client instance is permanently disposed.
   Future<void> dispose() async {
-    await disconnect(); // Ensure disconnected
-    // Close stream controllers if not already closed
-    if (!_receivedPayloadsController.isClosed) {
-      await _receivedPayloadsController.close();
-    }
-    if (!_clientListController.isClosed) {
-      await _clientListController.close(); // Close the client list controller
-    }
-    debugPrint("P2P Transport Client: Disposed.");
+    debugPrint("P2P Transport Client [$username]: Disposing...");
+    await disconnect(); // Ensure disconnected and file server stopped
+
+    // Close stream controllers
+    await _receivedPayloadsController.close();
+    await _clientListController.close();
+    await _fileShareProgressController.close();
+    await _downloadProgressController.close();
+
+    debugPrint("P2P Transport Client [$username]: Disposed.");
   }
 }
