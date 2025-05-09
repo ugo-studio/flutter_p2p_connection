@@ -17,6 +17,13 @@ enum P2pMessageType {
   unknown,
 }
 
+enum ReceivableFileState {
+  idle,
+  downloading,
+  completed,
+  error,
+}
+
 @immutable
 class P2pClientInfo {
   final String id;
@@ -319,7 +326,7 @@ class P2pMessage {
       Object.hash(senderId, type, payload, Object.hashAll(clients));
 }
 
-// --- New Helper Class: To track sent file state ---
+// --- Helper Class: To track sent file state ---
 class HostedFileInfo {
   final P2pFileInfo info;
   final String localPath;
@@ -351,15 +358,16 @@ class HostedFileInfo {
   }
 }
 
-// --- New Helper Class: To track received file state ---
+// --- Helper Class: To track received file state ---
 class ReceivableFileInfo {
   final P2pFileInfo info;
+  ReceivableFileState state;
   double downloadProgressPercent; // Percentage 0-100
   String? savePath; // Where the file is being/was saved
-  // You could add download state (idle, downloading, completed, error)
 
   ReceivableFileInfo({
     required this.info,
+    this.state = ReceivableFileState.idle,
     this.downloadProgressPercent = 0.0,
     this.savePath,
   });
@@ -802,23 +810,22 @@ class P2pTransportHost {
   }
 
   // --- Method to Share a File ---
-  Future<P2pFileInfo?> shareFile(String filePath,
+  Future<P2pFileInfo?> shareFile(File file,
       {List<P2pClientInfo>? recipients}) async {
     if (_server == null || _portInUse == null) {
       debugPrint("P2P Transport Host: Cannot share file, server not running.");
       return null;
     }
 
-    final file = File(filePath);
     if (!await file.exists()) {
       debugPrint(
-          "P2P Transport Host: Cannot share file, path does not exist: $filePath");
+          "P2P Transport Host: Cannot share file, path does not exist: ${file.path}");
       return null;
     }
 
     final fileStat = await file.stat();
     final fileId = const Uuid().v4();
-    final fileName = p.basename(filePath); // Get filename from path
+    final fileName = p.basename(file.path); // Get filename from path
 
     // --- Determine Host IP ---
     // This needs to be a specific IP reachable by clients or '0.0.0.0'
@@ -863,7 +870,7 @@ class P2pTransportHost {
     // Store the file locally for serving
     _hostedFiles[fileId] = HostedFileInfo(
       info: fileInfo,
-      localPath: filePath,
+      localPath: file.path,
       recipientIds: recipientIds, // Track intended recipients
     );
     debugPrint(
@@ -908,6 +915,8 @@ class P2pTransportHost {
     final savePath = p.join(saveDirectory, finalFileName);
     receivable.savePath = savePath; // Store where we are saving it
 
+    // Set as downloading
+    receivable.state = ReceivableFileState.downloading;
     debugPrint(
         "P2P Transport Host: Starting download for '${fileInfo.name}' (ID: $fileId) from $url to $savePath");
 
@@ -920,6 +929,7 @@ class P2pTransportHost {
     } catch (e) {
       debugPrint(
           "P2P Transport Host: Error creating save directory '$saveDirectory': $e");
+      receivable.state = ReceivableFileState.error;
       return false;
     }
 
@@ -952,6 +962,7 @@ class P2pTransportHost {
           response.statusCode != HttpStatus.partialContent) {
         debugPrint(
             "P2P Transport Host: Download failed for $fileId. Server responded with status ${response.statusCode}");
+        receivable.state = ReceivableFileState.error;
         final body = await response.stream.bytesToString();
         debugPrint("P2P Transport Host: Server error body: $body");
         return false;
@@ -1040,6 +1051,7 @@ class P2pTransportHost {
         onError: (e) {
           debugPrint(
               "P2P Transport Host: Error during download stream for $fileId: $e");
+          receivable.state = ReceivableFileState.error;
           progressUpdateTimer?.cancel();
           fileSink?.close().catchError((_) {}); // Try to close sink on error
           // Set error state?
@@ -1058,6 +1070,7 @@ class P2pTransportHost {
     } catch (e, s) {
       debugPrint(
           "P2P Transport Host: Error downloading file $fileId: $e\nStack: $s");
+      receivable.state = ReceivableFileState.error;
       await fileSink
           ?.close()
           .catchError((_) {}); // Ensure sink is closed on error
@@ -1069,6 +1082,7 @@ class P2pTransportHost {
       client.close();
     }
 
+    receivable.state = ReceivableFileState.completed;
     return true; // Assume success if no exceptions were thrown and stream completed
   }
 
@@ -1575,7 +1589,7 @@ class P2pTransportClient {
   }
 
   // --- Share a file from the client ---
-  Future<P2pFileInfo?> shareFile(String filePath,
+  Future<P2pFileInfo?> shareFile(File file,
       {List<P2pClientInfo>? recipients}) async {
     if (!isConnected) {
       debugPrint(
@@ -1588,16 +1602,15 @@ class P2pTransportClient {
       return null;
     }
 
-    final file = File(filePath);
     if (!await file.exists()) {
       debugPrint(
-          "P2P Transport Client [$username]: Cannot share file, path does not exist: $filePath");
+          "P2P Transport Client [$username]: Cannot share file, path does not exist: ${file.path}");
       return null;
     }
 
     final fileStat = await file.stat();
     final fileId = const Uuid().v4();
-    final fileName = p.basename(filePath);
+    final fileName = p.basename(file.path);
 
     // --- Determine Client's Reachable IP ---
     // This is tricky. We need an IP the *other* clients/host can reach.
@@ -1644,7 +1657,7 @@ class P2pTransportClient {
     // Store locally for serving via this client's HTTP server
     _hostedFiles[fileId] = HostedFileInfo(
       info: fileInfo,
-      localPath: filePath,
+      localPath: file.path,
       recipientIds: recipientIds, // Track intended recipients
     );
     debugPrint(
@@ -1690,6 +1703,8 @@ class P2pTransportClient {
     final savePath = p.join(saveDirectory, finalFileName);
     receivable.savePath = savePath; // Store where we are saving it
 
+    // Set as downloading
+    receivable.state = ReceivableFileState.downloading;
     debugPrint(
         "P2P Transport Client [$username]: Starting download for '${fileInfo.name}' (ID: $fileId) from $url to $savePath");
 
@@ -1702,6 +1717,7 @@ class P2pTransportClient {
     } catch (e) {
       debugPrint(
           "P2P Transport Client [$username]: Error creating save directory '$saveDirectory': $e");
+      receivable.state = ReceivableFileState.error;
       return false;
     }
 
@@ -1734,6 +1750,7 @@ class P2pTransportClient {
           response.statusCode != HttpStatus.partialContent) {
         debugPrint(
             "P2P Transport Client [$username]: Download failed for $fileId. Server responded with status ${response.statusCode}");
+        receivable.state = ReceivableFileState.error;
         final body = await response.stream.bytesToString();
         debugPrint(
             "P2P Transport Client [$username]: Server error body: $body");
@@ -1788,9 +1805,6 @@ class P2pTransportClient {
           );
 
           onProgress?.call(updateData); // Call the callback
-          // if (!_downloadProgressController.isClosed) {
-          //   _downloadProgressController.add(updateData); // Emit to stream
-          // }
 
           // Send progress update back to the original sender via WebSocket
           // Send updates less frequently (e.g., every 5% or every 500ms)
@@ -1826,6 +1840,7 @@ class P2pTransportClient {
         onError: (e) {
           debugPrint(
               "P2P Transport Client [$username]: Error during download stream for $fileId: $e");
+          receivable.state = ReceivableFileState.error;
           progressUpdateTimer?.cancel();
           fileSink?.close().catchError((_) {}); // Try to close sink on error
           // Set error state?
@@ -1855,6 +1870,7 @@ class P2pTransportClient {
       client.close();
     }
 
+    receivable.state = ReceivableFileState.completed;
     return true; // Assume success if no exceptions were thrown and stream completed
   }
 

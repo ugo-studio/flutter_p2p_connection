@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_p2p_connection/p2p_transport.dart';
@@ -442,14 +443,11 @@ class FlutterP2pHost extends _FlutterP2pConnection {
   /// Provides a stream of payloads received from connected clients via the P2P transport layer.
   ///
   /// This stream emits [P2pMessagePayload]s received from any connected client.
-  ///
-  /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
-  Stream<P2pMessagePayload> streamReceivedPayloads() {
-    if (_p2pTransport == null) {
-      throw StateError(
-          'Host: P2P transport is not active. Cannot stream data.');
+  Stream<P2pMessagePayload> streamReceivedPayloads() async* {
+    while (_p2pTransport == null) {
+      await Future.delayed(const Duration(milliseconds: 500));
     }
-    return _p2pTransport!.receivedPayloadsStream;
+    yield* _p2pTransport!.receivedPayloadsStream;
   }
 
   /// Broadcasts a [String] to all connected clients.
@@ -498,7 +496,7 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     return await transport.sendToClient(clientId, message);
   }
 
-  Future<P2pFileInfo?> broadcastFile(String filePath,
+  Future<P2pFileInfo?> broadcastFile(File file,
       {List<String>? excludeClientIds}) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
@@ -512,11 +510,10 @@ class FlutterP2pHost extends _FlutterP2pConnection {
         : transport.clientList
             .where((client) => !excludeClientIds.contains(client.id))
             .toList();
-    return await transport.shareFile(filePath, recipients: recipients);
+    return await transport.shareFile(file, recipients: recipients);
   }
 
-  Future<P2pFileInfo?> sendFileToClient(
-      String filePath, String clientId) async {
+  Future<P2pFileInfo?> sendFileToClient(File file, String clientId) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
       // Check if server is running
@@ -526,7 +523,7 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     // Delegate sending to the transport layer instance.
     var recipients =
         transport.clientList.where((client) => client.id == clientId).toList();
-    return await transport.shareFile(filePath, recipients: recipients);
+    return await transport.shareFile(file, recipients: recipients);
   }
 
   Stream<List<HostedFileInfo>> streamSentFilesInfo() async* {
@@ -938,14 +935,11 @@ class FlutterP2pClient extends _FlutterP2pConnection {
   /// Provides a stream of payloads received from connected clients via the P2P transport layer.
   ///
   /// This stream emits [P2pMessagePayload]s received from any connected client.
-  ///
-  /// Throws an [StateError] if the P2P transport is not active or has not been initialized.
-  Stream<P2pMessagePayload> streamReceivedPayloads() {
-    if (_p2pTransport == null) {
-      throw StateError(
-          'Host: P2P transport is not active. Cannot stream data.');
+  Stream<P2pMessagePayload> streamReceivedPayloads() async* {
+    while (_p2pTransport == null) {
+      await Future.delayed(const Duration(milliseconds: 500));
     }
-    return _p2pTransport!.receivedPayloadsStream;
+    yield* _p2pTransport!.receivedPayloadsStream;
   }
 
   /// Broadcasts a [String] to all connected clients.
@@ -1007,7 +1001,7 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     return await transport.send(message);
   }
 
-  Future<P2pFileInfo?> broadcastFile(String filePath,
+  Future<P2pFileInfo?> broadcastFile(File file,
       {List<String>? excludeClientIds}) async {
     final transport = _p2pTransport;
     if (transport == null || !transport.isConnected) {
@@ -1020,11 +1014,10 @@ class FlutterP2pClient extends _FlutterP2pConnection {
         : transport.clientList
             .where((client) => !excludeClientIds.contains(client.id))
             .toList();
-    return await transport.shareFile(filePath, recipients: recipients);
+    return await transport.shareFile(file, recipients: recipients);
   }
 
-  Future<P2pFileInfo?> sendFileToClient(
-      String filePath, String clientId) async {
+  Future<P2pFileInfo?> sendFileToClient(File file, String clientId) async {
     final transport = _p2pTransport;
     if (transport == null || !transport.isConnected) {
       throw StateError(
@@ -1033,7 +1026,7 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     // Delegate sending to the transport layer instance.
     var recipients =
         transport.clientList.where((client) => client.id == clientId).toList();
-    return await transport.shareFile(filePath, recipients: recipients);
+    return await transport.shareFile(file, recipients: recipients);
   }
 
   Stream<List<HostedFileInfo>> streamSentFilesInfo() async* {
