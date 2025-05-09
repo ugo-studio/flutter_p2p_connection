@@ -432,14 +432,11 @@ class FlutterP2pHost extends _FlutterP2pConnection {
 
   /// Provides a stream that emits the updated list of connected [P2pClientInfo]s
   /// whenever a client connects or disconnects.
-  ///
-  /// Throws a [StateError] if the P2P transport is not active.
-  Stream<List<P2pClientInfo>> streamClientList() {
-    if (_p2pTransport == null) {
-      throw StateError(
-          'Host: P2P transport is not active. Cannot stream client list.');
+  Stream<List<P2pClientInfo>> streamClientList() async* {
+    while (true) {
+      yield _p2pTransport?.clientList ?? [];
+      await Future.delayed(const Duration(seconds: 1));
     }
-    return _p2pTransport!.clientListStream;
   }
 
   /// Provides a stream of payloads received from connected clients via the P2P transport layer.
@@ -499,6 +496,51 @@ class FlutterP2pHost extends _FlutterP2pConnection {
       payload: P2pMessagePayload(text: text),
     );
     return await transport.sendToClient(clientId, message);
+  }
+
+  Future<P2pFileInfo?> broadcastFile(String filePath,
+      {List<String>? excludeClientIds}) async {
+    final transport = _p2pTransport;
+    if (transport == null || transport.portInUse == null) {
+      // Check if server is running
+      throw StateError(
+          'Host: P2P transport is not active. Cannot broadcast. Ensure createGroup() was called successfully.');
+    }
+    // Delegate broadcasting to the transport layer instance.
+    var recipients = excludeClientIds == null || excludeClientIds.isEmpty
+        ? null
+        : transport.clientList
+            .where((client) => !excludeClientIds.contains(client.id))
+            .toList();
+    return await transport.shareFile(filePath, recipients: recipients);
+  }
+
+  Future<P2pFileInfo?> sendFileToClient(
+      String filePath, String clientId) async {
+    final transport = _p2pTransport;
+    if (transport == null || transport.portInUse == null) {
+      // Check if server is running
+      throw StateError(
+          'Host: P2P transport is not active. Cannot send. Ensure createGroup() was called successfully.');
+    }
+    // Delegate sending to the transport layer instance.
+    var recipients =
+        transport.clientList.where((client) => client.id == clientId).toList();
+    return await transport.shareFile(filePath, recipients: recipients);
+  }
+
+  Stream<List<HostedFileInfo>> streamSentFilesInfo() async* {
+    while (true) {
+      yield _p2pTransport?.hostedFileInfos ?? [];
+      await Future.delayed(const Duration(seconds: 1));
+    }
+  }
+
+  Stream<List<ReceivableFileInfo>> streamReceivedFilesInfo() async* {
+    while (true) {
+      yield _p2pTransport?.receivableFileInfos ?? [];
+      await Future.delayed(const Duration(seconds: 1));
+    }
   }
 }
 
@@ -886,14 +928,11 @@ class FlutterP2pClient extends _FlutterP2pConnection {
 
   /// Provides a stream that emits the updated list of connected [P2pClientInfo]s
   /// whenever a client connects or disconnects.
-  ///
-  /// Throws a [StateError] if the P2P transport is not active.
-  Stream<List<P2pClientInfo>> streamClientList() {
-    if (_p2pTransport == null) {
-      throw StateError(
-          'Client: P2P transport is not active. Cannot stream client list.');
+  Stream<List<P2pClientInfo>> streamClientList() async* {
+    while (true) {
+      yield _p2pTransport?.clientList ?? [];
+      await Future.delayed(const Duration(seconds: 1));
     }
-    return _p2pTransport!.clientListStream;
   }
 
   /// Provides a stream of payloads received from connected clients via the P2P transport layer.
@@ -922,9 +961,8 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     final transport = _p2pTransport;
     // Check if transport is running
     if (transport == null || !transport.isConnected) {
-      debugPrint('Client: P2P transport is not connected. Cannot send data.');
       throw StateError(
-          'Client: P2P transport is not connected. Cannot send data.');
+          'Client: P2P transport is not connected. Cannot broadcast data.');
     }
     // Delegate broadcasting to the transport layer instance.
     var message = P2pMessage(
@@ -953,7 +991,6 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     final transport = _p2pTransport;
     // Check if transport is running
     if (transport == null || !transport.isConnected) {
-      debugPrint('Client: P2P transport is not connected. Cannot send data.');
       throw StateError(
           'Client: P2P transport is not connected. Cannot send data.');
     }
@@ -968,6 +1005,49 @@ class FlutterP2pClient extends _FlutterP2pConnection {
           .toList(),
     );
     return await transport.send(message);
+  }
+
+  Future<P2pFileInfo?> broadcastFile(String filePath,
+      {List<String>? excludeClientIds}) async {
+    final transport = _p2pTransport;
+    if (transport == null || !transport.isConnected) {
+      throw StateError(
+          'Client: P2P transport is not connected. Cannot broadcast data.');
+    }
+    // Delegate broadcasting to the transport layer instance.
+    var recipients = excludeClientIds == null || excludeClientIds.isEmpty
+        ? null
+        : transport.clientList
+            .where((client) => !excludeClientIds.contains(client.id))
+            .toList();
+    return await transport.shareFile(filePath, recipients: recipients);
+  }
+
+  Future<P2pFileInfo?> sendFileToClient(
+      String filePath, String clientId) async {
+    final transport = _p2pTransport;
+    if (transport == null || !transport.isConnected) {
+      throw StateError(
+          'Client: P2P transport is not connected. Cannot send data.');
+    }
+    // Delegate sending to the transport layer instance.
+    var recipients =
+        transport.clientList.where((client) => client.id == clientId).toList();
+    return await transport.shareFile(filePath, recipients: recipients);
+  }
+
+  Stream<List<HostedFileInfo>> streamSentFilesInfo() async* {
+    while (true) {
+      yield _p2pTransport?.hostedFileInfos ?? [];
+      await Future.delayed(const Duration(seconds: 1));
+    }
+  }
+
+  Stream<List<ReceivableFileInfo>> streamReceivedFilesInfo() async* {
+    while (true) {
+      yield _p2pTransport?.receivableFileInfos ?? [];
+      await Future.delayed(const Duration(seconds: 1));
+    }
   }
 }
 
