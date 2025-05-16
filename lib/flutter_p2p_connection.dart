@@ -440,16 +440,6 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     }
   }
 
-  /// Provides a stream of payloads received from connected clients via the P2P transport layer.
-  ///
-  /// This stream emits [P2pMessagePayload]s received from any connected client.
-  Stream<P2pMessagePayload> streamReceivedPayloads() async* {
-    while (_p2pTransport == null) {
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-    yield* _p2pTransport!.receivedPayloadsStream;
-  }
-
   /// Broadcasts a [String] to all connected clients.
   ///
   /// - [text]: The [String] to send.
@@ -526,6 +516,13 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     return await transport.shareFile(file, recipients: recipients);
   }
 
+  Stream<String> streamReceivedTexts() async* {
+    while (_p2pTransport == null) {
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    yield* _p2pTransport!.receivedTextStream;
+  }
+
   Stream<List<HostedFileInfo>> streamSentFilesInfo() async* {
     while (true) {
       yield _p2pTransport?.hostedFileInfos ?? [];
@@ -538,6 +535,38 @@ class FlutterP2pHost extends _FlutterP2pConnection {
       yield _p2pTransport?.receivableFileInfos ?? [];
       await Future.delayed(const Duration(seconds: 1));
     }
+  }
+
+  Future<bool> downloadFile(
+    String fileId,
+    String saveDirectory, {
+    String? customFileName,
+    bool? deleteOnError,
+    Function(FileDownloadProgressUpdate)? onProgress, // Callback for progress
+    // Optional range parameters
+    int? rangeStart,
+    int? rangeEnd,
+  }) async {
+    final transport = _p2pTransport;
+    // Check if transport is running
+    if (transport == null || transport.portInUse == null) {
+      throw StateError(
+          'Host: P2P transport is not active. Cannot download file. Ensure createGroup() was called successfully.');
+    }
+    if (transport.clientList.isEmpty) {
+      throw StateError(
+          'Host: P2P transport is not connected to any clients. Cannot download file.');
+    }
+    // Download the file
+    return await transport.downloadFile(
+      fileId,
+      saveDirectory,
+      customFileName: customFileName,
+      deleteOnError: deleteOnError,
+      onProgress: onProgress,
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd,
+    );
   }
 }
 
@@ -932,16 +961,6 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     }
   }
 
-  /// Provides a stream of payloads received from connected clients via the P2P transport layer.
-  ///
-  /// This stream emits [P2pMessagePayload]s received from any connected client.
-  Stream<P2pMessagePayload> streamReceivedPayloads() async* {
-    while (_p2pTransport == null) {
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-    yield* _p2pTransport!.receivedPayloadsStream;
-  }
-
   /// Broadcasts a [String] to all connected clients.
   ///
   /// - [text]: The [String] to send.
@@ -1029,6 +1048,13 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     return await transport.shareFile(file, recipients: recipients);
   }
 
+  Stream<String> streamReceivedTexts() async* {
+    while (_p2pTransport == null) {
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    yield* _p2pTransport!.receivedTextStream;
+  }
+
   Stream<List<HostedFileInfo>> streamSentFilesInfo() async* {
     while (true) {
       yield _p2pTransport?.hostedFileInfos ?? [];
@@ -1041,6 +1067,38 @@ class FlutterP2pClient extends _FlutterP2pConnection {
       yield _p2pTransport?.receivableFileInfos ?? [];
       await Future.delayed(const Duration(seconds: 1));
     }
+  }
+
+  Future<bool> downloadFile(
+    String fileId,
+    String saveDirectory, {
+    String? customFileName,
+    bool? deleteOnError,
+    Function(FileDownloadProgressUpdate)? onProgress, // Callback for progress
+    // Optional range parameters
+    int? rangeStart,
+    int? rangeEnd,
+  }) async {
+    final transport = _p2pTransport;
+    // Check if transport is running
+    if (transport == null || !transport.isConnected) {
+      throw StateError(
+          'Client: P2P transport is not connected. Cannot download file.');
+    }
+    if (transport.clientList.isEmpty) {
+      throw StateError(
+          'Client: P2P transport is not connected to any clients. Cannot download file.');
+    }
+    // Download the file
+    return await transport.downloadFile(
+      fileId,
+      saveDirectory,
+      customFileName: customFileName,
+      deleteOnError: deleteOnError,
+      onProgress: onProgress,
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd,
+    );
   }
 }
 

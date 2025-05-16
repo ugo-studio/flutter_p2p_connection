@@ -331,29 +331,31 @@ class HostedFileInfo {
   final P2pFileInfo info;
   final String localPath;
   // Map: Receiver ID -> bytes downloaded
-  final Map<String, int> downloadProgressBytes;
+  final Map<String, int> _downloadProgressBytes;
+
+  List<String> get receiverIds => _downloadProgressBytes.keys.toList();
 
   HostedFileInfo({
     required this.info,
     required this.localPath,
     required List<String> recipientIds,
-  }) : downloadProgressBytes = {
+  }) : _downloadProgressBytes = {
           for (var id in recipientIds) id: 0
         }; // Initialize progress for all recipients
 
   // Calculate percentage for a specific receiver
   double getProgressPercent(String receiverId) {
-    final bytes = downloadProgressBytes[receiverId];
+    final bytes = _downloadProgressBytes[receiverId];
     if (info.size == 0 || bytes == null) return 0.0;
     return (bytes / info.size) * 100.0;
   }
 
   // Update progress and return true if changed significantly
   void updateProgress(String receiverId, int bytes) {
-    final currentBytes = downloadProgressBytes[receiverId] ?? 0;
+    final currentBytes = _downloadProgressBytes[receiverId] ?? 0;
     // Only update if it's forward progress
     if (bytes > currentBytes) {
-      downloadProgressBytes[receiverId] = bytes;
+      _downloadProgressBytes[receiverId] = bytes;
     }
   }
 }
@@ -429,11 +431,10 @@ class P2pTransportHost {
   // Map: File ID -> ReceivableFileInfo
   final Map<String, ReceivableFileInfo> _receivableFiles = {};
 
-  final StreamController<P2pMessagePayload> _receivedPayloadsController =
-      StreamController<P2pMessagePayload>.broadcast();
+  final StreamController<String> _receivedTextController =
+      StreamController<String>.broadcast();
 
-  Stream<P2pMessagePayload> get receivedPayloadsStream =>
-      _receivedPayloadsController.stream;
+  Stream<String> get receivedTextStream => _receivedTextController.stream;
 
   int? get portInUse => _portInUse;
   List<P2pClientInfo> get clientList =>
@@ -566,9 +567,10 @@ class P2pTransportHost {
                     }
                   }
 
-                  // Forward the text/general payload part to the application stream
-                  if (!_receivedPayloadsController.isClosed) {
-                    _receivedPayloadsController.add(payload);
+                  // Forward the text payload part to the text stream
+                  if (payload.text.isNotEmpty &&
+                      !_receivedTextController.isClosed) {
+                    _receivedTextController.add(payload.text);
                   }
                 }
 
@@ -655,8 +657,7 @@ class P2pTransportHost {
     final fileInfo = _hostedFiles[progressUpdate.fileId];
     if (fileInfo != null) {
       // Ensure the update is from a valid receiver for this file
-      if (fileInfo.downloadProgressBytes
-          .containsKey(progressUpdate.receiverId)) {
+      if (fileInfo.receiverIds.contains(progressUpdate.receiverId)) {
         fileInfo.updateProgress(
             progressUpdate.receiverId, progressUpdate.bytesDownloaded);
         debugPrint(
@@ -896,6 +897,7 @@ class P2pTransportHost {
     String fileId,
     String saveDirectory, {
     String? customFileName,
+    bool? deleteOnError,
     Function(FileDownloadProgressUpdate)? onProgress, // Callback for progress
     // Optional range parameters (for resuming/chunking in the future)
     int? rangeStart,
@@ -1075,8 +1077,10 @@ class P2pTransportHost {
           ?.close()
           .catchError((_) {}); // Ensure sink is closed on error
       // Clean up partially downloaded file
-      // ignore: body_might_complete_normally_catch_error
-      await File(savePath).delete().catchError((_) async {});
+      if (deleteOnError != false) {
+        // ignore: body_might_complete_normally_catch_error
+        await File(savePath).delete().catchError((_) async {});
+      }
       return false;
     } finally {
       client.close();
@@ -1166,7 +1170,7 @@ class P2pTransportHost {
 
   Future<void> stop() async {
     debugPrint("P2P Transport Host: Stopping server...");
-    await _receivedPayloadsController.close();
+    await _receivedTextController.close();
 
     for (var clientData in _clients.values) {
       await clientData.socket.close().catchError((_) {});
@@ -1206,8 +1210,8 @@ class P2pTransportClient {
   final Map<String, ReceivableFileInfo> _receivableFiles = {};
   // --- End File Receiving State ---
 
-  final StreamController<P2pMessagePayload> _receivedPayloadsController =
-      StreamController<P2pMessagePayload>.broadcast();
+  final StreamController<String> _receivedTextController =
+      StreamController<String>.broadcast();
 
   bool get isConnected => _isConnected && _socket?.readyState == WebSocket.open;
   List<P2pClientInfo> get clientList => _clientList;
@@ -1216,8 +1220,7 @@ class P2pTransportClient {
   List<ReceivableFileInfo> get receivableFileInfos =>
       _receivableFiles.values.toList();
 
-  Stream<P2pMessagePayload> get receivedPayloadsStream =>
-      _receivedPayloadsController.stream;
+  Stream<String> get receivedTextStream => _receivedTextController.stream;
 
   P2pTransportClient({
     required this.hostIp,
@@ -1504,9 +1507,10 @@ class P2pTransportClient {
                   }
                 }
 
-                // Forward the text/general payload part to the application stream
-                if (!_receivedPayloadsController.isClosed) {
-                  _receivedPayloadsController.add(payload);
+                // Forward the text payload part to the text stream
+                if (payload.text.isNotEmpty &&
+                    !_receivedTextController.isClosed) {
+                  _receivedTextController.add(payload.text);
                 }
               } else {
                 debugPrint(
@@ -1572,8 +1576,7 @@ class P2pTransportClient {
   void _handleFileProgressUpdate(P2pFileProgressUpdate progressUpdate) {
     final fileInfo = _hostedFiles[progressUpdate.fileId];
     if (fileInfo != null) {
-      if (fileInfo.downloadProgressBytes
-          .containsKey(progressUpdate.receiverId)) {
+      if (fileInfo.receiverIds.contains(progressUpdate.receiverId)) {
         fileInfo.updateProgress(
             progressUpdate.receiverId, progressUpdate.bytesDownloaded);
         debugPrint(
@@ -1684,6 +1687,7 @@ class P2pTransportClient {
     String fileId,
     String saveDirectory, {
     String? customFileName,
+    bool? deleteOnError,
     Function(FileDownloadProgressUpdate)? onProgress, // Callback for progress
     // Optional range parameters (for resuming/chunking in the future)
     int? rangeStart,
@@ -1863,8 +1867,10 @@ class P2pTransportClient {
           ?.close()
           .catchError((_) {}); // Ensure sink is closed on error
       // Clean up partially downloaded file
-      // ignore: body_might_complete_normally_catch_error
-      await File(savePath).delete().catchError((_) async {});
+      if (deleteOnError != false) {
+        // ignore: body_might_complete_normally_catch_error
+        await File(savePath).delete().catchError((_) async {});
+      }
       return false;
     } finally {
       client.close();
@@ -1937,7 +1943,7 @@ class P2pTransportClient {
     await disconnect(); // Ensure disconnected and file server stopped
 
     // Close stream controllers
-    await _receivedPayloadsController.close();
+    await _receivedTextController.close();
 
     debugPrint("P2P Transport Client [$username]: Disposed.");
   }

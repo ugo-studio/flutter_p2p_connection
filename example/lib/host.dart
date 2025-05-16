@@ -18,7 +18,7 @@ class _HostPageState extends State<HostPage> {
   late FlutterP2pHost flutterP2P;
 
   StreamSubscription<HotspotHostState>? hotspotStateStream;
-  StreamSubscription<P2pMessagePayload>? payloadStream;
+  StreamSubscription<String>? receivedTextStream;
 
   HotspotHostState? hotspotState;
 
@@ -33,15 +33,8 @@ class _HostPageState extends State<HostPage> {
           hotspotState = state;
         });
       });
-      payloadStream = flutterP2P.streamReceivedPayloads().listen((payload) {
-        if (payload.text.isNotEmpty) {
-          snack('Received text message: ${payload.text}');
-        }
-
-        if (payload.files.isNotEmpty) {
-          print(payload.files);
-          snack('Received ${payload.files.length} files');
-        }
+      receivedTextStream = flutterP2P.streamReceivedTexts().listen((text) {
+        snack('Received text message: ${text}');
       });
     });
   }
@@ -51,7 +44,7 @@ class _HostPageState extends State<HostPage> {
     flutterP2P.dispose();
     textEditingController.dispose();
     hotspotStateStream?.cancel();
-    payloadStream?.cancel();
+    receivedTextStream?.cancel();
     super.dispose();
   }
 
@@ -260,6 +253,98 @@ class _HostPageState extends State<HostPage> {
                   "Send file",
                   style: TextStyle(color: Colors.green),
                 ),
+              ),
+              const SizedBox(height: 30),
+
+              // display sent files
+              StreamBuilder(
+                stream: flutterP2P.streamSentFilesInfo(),
+                builder: (context, snapshot) {
+                  var sentFiles = snapshot.data ?? [];
+                  return Center(
+                    child: Column(
+                      children: [
+                        Text(
+                            "Sent files (${sentFiles.isEmpty ? 'empty' : sentFiles.length}):"),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 200,
+                          child: ListView.builder(
+                            itemCount: sentFiles.length,
+                            itemBuilder: (context, index) {
+                              var file = sentFiles[index];
+                              var receiverIds = file.receiverIds;
+
+                              return ListTile(
+                                title: Text(file.info.name),
+                                subtitle: SizedBox(
+                                  width: MediaQuery.of(context).size.width,
+                                  height: 200,
+                                  child: ListView.builder(
+                                    itemCount: receiverIds.length,
+                                    itemBuilder: (context, index) {
+                                      var id = receiverIds[index];
+                                      var percent =
+                                          file.getProgressPercent(id).round();
+                                      return Text("$id = $percent%");
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 30),
+
+              // display received files
+              StreamBuilder(
+                stream: flutterP2P.streamReceivedFilesInfo(),
+                builder: (context, snapshot) {
+                  var receivedFiles = snapshot.data ?? [];
+                  return Center(
+                    child: Column(
+                      children: [
+                        Text(
+                            "Received files (${receivedFiles.isEmpty ? 'empty' : receivedFiles.length}):"),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 200,
+                          child: ListView.builder(
+                            itemCount: receivedFiles.length,
+                            itemBuilder: (context, index) {
+                              var file = receivedFiles[index];
+                              var percent =
+                                  file.downloadProgressPercent.round();
+
+                              return ListTile(
+                                title: Text(file.info.name),
+                                subtitle:
+                                    Text("state: ${file.state}, $percent%"),
+                                trailing: file.state == ReceivableFileState.idle
+                                    ? ElevatedButton(
+                                        onPressed: () async {
+                                          var downloaded =
+                                              await flutterP2P.downloadFile(
+                                                  file.info.id,
+                                                  '/storage/emulated/0/Download/');
+                                          snack("Download file: $downloaded");
+                                        },
+                                        child: Text('download'),
+                                      )
+                                    : SizedBox.shrink(),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 30),
             ],
