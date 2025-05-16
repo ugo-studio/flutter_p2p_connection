@@ -578,27 +578,25 @@ class BleManager(
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             super.onScanResult(callbackType, result)
             result?.device?.let { device ->
-                 val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                 if (canAccessName) {
+                val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                if (canAccessName) {
                     val deviceAddress = device.address
                     val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
-                    val rssi = result.rssi
 
                     val resultMap = mapOf(
                         "deviceAddress" to deviceAddress,
                         "deviceName" to deviceName,
-                        "rssi" to rssi
                     )
                     val updated = discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap
                     if (updated) {
-                        Log.d(TAG,"BLE Device Found/Updated: $deviceAddress ($deviceName)")
+                        Log.d(TAG,"BLE Device Found/Updated: $deviceAddress ($deviceName) RSSI: ${result.rssi}")
                         sendScanResultListUpdate()
                     } else {
                         // 'if' must have both main and 'else' branches if used as an expression
                     }
-                 } else {
-                      Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to get name for scan result on Android 12+")
-                 }
+                } else {
+                    Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to get name for scan result on Android 12+")
+                }
             }
         }
 
@@ -611,16 +609,15 @@ class BleManager(
                     if (canAccessName) {
                         val deviceAddress = device.address
                         val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
-                        val rssi = result.rssi
-                         val resultMap = mapOf(
-                            "deviceAddress" to deviceAddress,
-                            "deviceName" to deviceName,
-                            "rssi" to rssi
-                         )
-                         if (discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap) {
+
+                        val resultMap = mapOf(
+                        "deviceAddress" to deviceAddress,
+                        "deviceName" to deviceName,
+                        )
+                        if (discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap) {
                             listChanged = true
-                             Log.d(TAG,"BLE Device Found/Updated (Batch): $deviceAddress ($deviceName) RSSI: $rssi")
-                         }
+                            Log.d(TAG,"BLE Device Found/Updated (Batch): $deviceAddress ($deviceName) RSSI: ${result.rssi}")
+                        }
                     } else {
                         Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to get name for batch scan result on Android 12+")
                     }
@@ -701,7 +698,7 @@ class BleManager(
             val currentBondStateOnServer = device.bondState // Get current bond state
             Log.d(TAG, "GATT Server: Read request for Characteristic $charUuid from $deviceAddress (Offset: $offset, BondState: ${bondStateToString(currentBondStateOnServer)})")
 
-            if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                 Log.e(TAG, "Missing BLUETOOTH_CONNECT permission for GATT server read response.")
                 gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION, offset, null)
                 return

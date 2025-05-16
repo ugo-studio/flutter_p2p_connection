@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 import 'package:flutter_p2p_connection/p2p_transport.dart';
@@ -127,15 +129,21 @@ class _ClientPageState extends State<ClientPage> {
   }
 
   void sendFile() async {
-    // FilePickerResult? result = await FilePicker.platform.pickFiles();
+    String? path = await FilesystemPicker.open(
+      context: context,
+      title: 'Select file',
+      fsType: FilesystemType.file,
+      rootDirectory: Directory('/storage/emulated/0/'),
+      fileTileSelectMode: FileTileSelectMode.wholeTile,
+    );
 
-    // if (result != null) {
-    //   File file = File(result.files.single.path!);
-    //   flutterP2P.broadcastFile(file);
-    //   snack("file sent to clients");
-    // } else {
-    //   snack("user canceled file picker");
-    // }
+    if (path != null) {
+      File file = File(path);
+      flutterP2P.broadcastFile(file);
+      snack("file sent to clients");
+    } else {
+      snack("user canceled file picker");
+    }
   }
 
   @override
@@ -291,6 +299,38 @@ class _ClientPageState extends State<ClientPage> {
                   "Send file",
                   style: TextStyle(color: Colors.green),
                 ),
+              ),
+              const SizedBox(height: 30),
+
+              // display received files
+              StreamBuilder(
+                stream: flutterP2P.streamReceivedFilesInfo(),
+                builder: (context, snapshot) {
+                  var receivedFiles = snapshot.data ?? [];
+                  return Center(
+                    child: Column(
+                      children: [
+                        Text(
+                            "Received files (${receivedFiles.isEmpty ? 'empty' : receivedFiles.length}):"),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 200,
+                          child: ListView.builder(
+                            itemCount: receivedFiles.length,
+                            itemBuilder: (context, index) {
+                              var file = receivedFiles[index];
+
+                              return ListTile(
+                                title: Text(file.info.name),
+                                subtitle: Text("state: ${file.state}"),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 30),
             ],

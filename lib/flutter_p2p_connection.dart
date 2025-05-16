@@ -1275,15 +1275,10 @@ class BleDiscoveredDevice {
   /// The advertised name of the BLE device. May be empty or a default name like "Unknown Device".
   final String deviceName;
 
-  /// The Received Signal Strength Indicator (RSSI) in dBm.
-  /// Indicates the signal strength at the time of discovery (more negative means weaker signal).
-  final int rssi;
-
   /// Creates a representation of a discovered BLE device.
   const BleDiscoveredDevice({
     required this.deviceAddress,
     required this.deviceName,
-    required this.rssi,
   });
 
   /// Creates a [BleDiscoveredDevice] instance from a map (typically from platform channel).
@@ -1295,7 +1290,6 @@ class BleDiscoveredDevice {
       deviceName: (map['deviceName'] as String?)?.isNotEmpty ?? false
           ? map['deviceName'] as String
           : 'Unknown Device', // Provide default name
-      rssi: map['rssi'] as int? ?? -100, // Provide default RSSI
     );
   }
 
@@ -1304,13 +1298,12 @@ class BleDiscoveredDevice {
     return {
       'deviceAddress': deviceAddress,
       'deviceName': deviceName,
-      'rssi': rssi,
     };
   }
 
   @override
   String toString() {
-    return 'BleDiscoveredDevice(deviceAddress: $deviceAddress, deviceName: $deviceName, rssi: $rssi)';
+    return 'BleDiscoveredDevice(deviceAddress: $deviceAddress, deviceName: $deviceName)';
   }
 
   @override
@@ -1319,13 +1312,12 @@ class BleDiscoveredDevice {
 
     return other is BleDiscoveredDevice &&
         other.deviceAddress == deviceAddress &&
-        other.deviceName == deviceName &&
-        other.rssi == rssi;
+        other.deviceName == deviceName;
   }
 
   @override
   int get hashCode {
-    return Object.hash(deviceAddress, deviceName, rssi);
+    return Object.hash(deviceAddress, deviceName);
   }
 }
 

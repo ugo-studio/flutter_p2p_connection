@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
 import 'package:flutter_p2p_connection/p2p_transport.dart';
@@ -126,15 +128,21 @@ class _HostPageState extends State<HostPage> {
   }
 
   void sendFile() async {
-    // FilePickerResult? result = await FilePicker.platform.pickFiles();
+    String? path = await FilesystemPicker.open(
+      context: context,
+      title: 'Select file',
+      fsType: FilesystemType.file,
+      rootDirectory: Directory('/storage/emulated/0/'),
+      fileTileSelectMode: FileTileSelectMode.wholeTile,
+    );
 
-    // if (result != null) {
-    //   File file = File(result.files.single.path!);
-    //   flutterP2P.broadcastFile(file);
-    //   snack("file sent to clients");
-    // } else {
-    //   snack("user canceled file picker");
-    // }
+    if (path != null) {
+      File file = File(path);
+      flutterP2P.broadcastFile(file);
+      snack("file sent to clients");
+    } else {
+      snack("user canceled file picker");
+    }
   }
 
   @override
