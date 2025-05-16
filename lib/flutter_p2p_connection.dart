@@ -7,344 +7,154 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'flutter_p2p_connection_platform_interface.dart';
 
-// Default port for the custom P2P transport layer if not specified otherwise.
 const int _defaultP2pTransportPort = 3456;
 const int _defaultP2pTransportClientFileServerPort = 4567;
 
-/// The main entry point for the Flutter P2P Connection plugin.
-///
-/// This class provides access to:
-/// - Utility methods for checking and requesting permissions and enabling services
-///   (Location, Wi-Fi, Bluetooth) required for P2P operations.
-/// - Device information like the model.
 class _FlutterP2pConnection {
-  /// Retrieves the model identifier of the current device.
-  ///
-  /// Useful for debugging or tailoring behavior based on the device.
-  ///
-  /// Returns a [Future] completing with the device model string.
   Future<String> getDeviceModel() =>
       FlutterP2pConnectionPlatform.instance.getPlatformModel();
 
-  /// Checks if location services are currently enabled on the device.
-  ///
-  /// Location is often required for Wi-Fi and BLE scanning on Android.
-  ///
-  /// Returns a [Future] completing with `true` if location is enabled, `false` otherwise.
   Future<bool> checkLocationEnabled() async =>
       await FlutterP2pConnectionPlatform.instance.checkLocationEnabled();
 
-  /// Attempts to guide the user to system settings to enable location services.
-  ///
-  /// This typically opens the device's location settings screen.
-  /// After the user potentially enables the service, it re-checks the status.
-  ///
-  /// Returns a [Future] completing with `true` if location is enabled after the
-  /// attempt, `false` otherwise. Note that the user can choose not to enable it.
   Future<bool> enableLocationServices() async {
     await FlutterP2pConnectionPlatform.instance.enableLocationServices();
-    // Re-check status after returning from settings.
     return await checkLocationEnabled();
   }
 
-  /// Checks if Wi-Fi is currently enabled on the device.
-  ///
-  /// Wi-Fi is essential for Wi-Fi Direct P2P connections.
-  ///
-  /// Returns a [Future] completing with `true` if Wi-Fi is enabled, `false` otherwise.
   Future<bool> checkWifiEnabled() async =>
       await FlutterP2pConnectionPlatform.instance.checkWifiEnabled();
 
-  /// Attempts to guide the user to system settings to enable Wi-Fi.
-  ///
-  /// This typically opens the device's Wi-Fi settings screen.
-  /// After the user potentially enables Wi-Fi, it re-checks the status.
-  ///
-  /// Returns a [Future] completing with `true` if Wi-Fi is enabled after the
-  /// attempt, `false` otherwise.
   Future<bool> enableWifiServices() async {
     await FlutterP2pConnectionPlatform.instance.enableWifiServices();
-    // Re-check status after returning from settings.
     return await checkWifiEnabled();
   }
 
-  /// Checks if Bluetooth is currently enabled on the device.
-  ///
-  /// Bluetooth is required for BLE discovery (scanning and advertising).
-  ///
-  /// Returns a [Future] completing with `true` if Bluetooth is enabled, `false` otherwise.
   Future<bool> checkBluetoothEnabled() async =>
       await FlutterP2pConnectionPlatform.instance.checkBluetoothEnabled();
 
-  /// Attempts to guide the user to system settings to enable Bluetooth.
-  ///
-  /// This typically opens the device's Bluetooth settings screen.
-  /// After the user potentially enables Bluetooth, it re-checks the status.
-  ///
-  /// Returns a [Future] completing with `true` if Bluetooth is enabled after the
-  /// attempt, `false` otherwise.
   Future<bool> enableBluetoothServices() async {
     await FlutterP2pConnectionPlatform.instance.enableBluetoothServices();
-    // Re-check status after returning from settings.
     return await checkBluetoothEnabled();
   }
 
-  /// Checks if all necessary Bluetooth permissions are granted.
-  ///
-  /// This includes permissions for connecting, scanning, and advertising,
-  /// which vary depending on the Android version. Uses the `permission_handler` package.
-  /// Also checks for Location permission which is often required for BLE scanning.
-  ///
-  /// Returns a [Future] completing with `true` if all required Bluetooth and
-  /// associated Location permissions are granted, `false` otherwise.
   Future<bool> checkBluetoothPermissions() async {
-    // Permissions required might vary slightly based on Android SDK level.
-    // These cover common BLE operations. Android 12+ requires specific permissions.
-    // Location is generally required for scanning before Android 12, and often
-    // requested alongside BT permissions even on 12+ for reliability.
     final List<Permission> permissions = [
-      Permission
-          .locationWhenInUse, // Or Permission.location if background scan needed
-      Permission.bluetoothScan, // Needed for discovering devices (Android 12+)
-      Permission
-          .bluetoothConnect, // Needed for connecting to devices (Android 12+)
-      Permission.bluetoothAdvertise, // Needed for advertising (Android 12+)
+      Permission.locationWhenInUse,
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.bluetoothAdvertise,
     ];
-
-    // On older Android versions, some permissions might not exist or be relevant.
-    // permission_handler usually handles this gracefully (returns PermissionStatus.granted
-    // or restricted/denied based on manifest and OS level).
-
     for (final perm in permissions) {
       final status = await perm.status;
-      // Consider .isLimited as potentially sufficient for some use cases (e.g., location)
       if (!status.isGranted && !status.isLimited) {
         debugPrint("Permission missing: $perm status: $status");
-        return false; // If any required permission is not granted, return false.
+        return false;
       }
     }
-
-    // // Additionally check the basic Bluetooth permission for good measure,
-    // // although the specific ones above are key on newer Android.
-    // if (!(await Permission.bluetooth.status.isGranted)) {
-    //   debugPrint(
-    //       "Permission missing: ${Permission.bluetooth} status: ${await Permission.bluetooth.status}");
-    //   return false;
-    // }
-
-    return true; // All checked permissions are granted.
+    return true;
   }
 
-  /// Requests necessary Bluetooth and associated Location permissions from the user.
-  ///
-  /// Uses the `permission_handler` package to request permissions for scanning,
-  /// connecting, advertising, and location (often needed for scanning).
-  ///
-  /// Returns a [Future] completing with `true` if all requested permissions
-  /// are granted by the user (or were already granted), `false` otherwise.
   Future<bool> askBluetoothPermissions() async {
-    // Request all potentially needed permissions at once.
-    // The user will see separate dialogs if multiple are needed.
     await [
-      Permission.locationWhenInUse, // Request location first or alongside BT
-      Permission
-          .bluetooth, // General Bluetooth permission (might be auto-granted if others are)
+      Permission.locationWhenInUse,
+      Permission.bluetooth,
       Permission.bluetoothScan,
       Permission.bluetoothAdvertise,
       Permission.bluetoothConnect,
     ].request();
-
-    // After requesting, check if they were actually granted.
     return await checkBluetoothPermissions();
   }
 
-  /// Checks if all necessary P2P (Wi-Fi Direct) permissions are granted.
-  ///
-  /// This typically includes permissions like `NEARBY_WIFI_DEVICES` (Android 13+),
-  /// `ACCESS_FINE_LOCATION` (required for Wi-Fi scanning/discovery), and potentially
-  /// `CHANGE_WIFI_STATE`. The exact check is handled by the platform implementation.
-  ///
-  /// Returns a [Future] completing with `true` if all required P2P permissions
-  /// are granted, `false` otherwise.
   Future<bool> checkP2pPermissions() async =>
       await FlutterP2pConnectionPlatform.instance.checkP2pPermissions();
 
-  /// Requests necessary P2P (Wi-Fi Direct) permissions from the user.
-  ///
-  /// This triggers the platform-specific permission request dialogs for permissions
-  /// like `NEARBY_WIFI_DEVICES`, `ACCESS_FINE_LOCATION`, etc.
-  ///
-  /// Returns a [Future] completing with `true` if the permissions are granted
-  /// after the request (or were already granted), `false` otherwise.
   Future<bool> askP2pPermissions() async {
     await FlutterP2pConnectionPlatform.instance.askP2pPermissions();
-    // Re-check status after the request dialog.
     return await checkP2pPermissions();
   }
 
-  /// Checks if the necessary storage permissions are granted for file transfer.
-  ///
-  /// **Note:** Storage permission requirements have changed significantly in recent
-  /// Android versions (Scoped Storage from Android 10/11, stricter rules in 13+).
-  /// Relying on `Permission.storage` is often insufficient or incorrect on modern Android.
-  ///
-  /// Consider using platform-specific file pickers (`file_picker` package) or
-  /// MediaStore APIs instead of requesting broad storage permissions.
-  /// This method provides a basic check for older compatibility but might need
-  /// adjustment based on your specific file access needs and target Android SDK.
-  ///
-  /// Returns a [Future] completing with `true` if `Permission.storage` is granted,
-  /// `false` otherwise. This might not reflect the actual ability to read/write
-  /// all files on newer Android versions.
   Future<bool> checkStoragePermission() async {
-    // On Android 13+, direct external storage access is highly restricted.
-    // Checking Permission.storage might not be the right approach.
-    // Consider checking specific media permissions (photos, videos, audio) if applicable.
-    // Or using MANAGE_EXTERNAL_STORAGE (requires special Play Store approval).
-
-    // Basic check for Permission.storage:
-    if (await Permission.storage.isGranted) {
-      return true;
-    }
-
-    // Example check for media permissions (Android 13+):
-    // if (await Permission.photos.isGranted || await Permission.videos.isGranted || await Permission.audio.isGranted) {
-    //   // If any media permission is granted, maybe that's sufficient? Depends on use case.
-    //   return true;
-    // }
-
-    return false;
+    // Consider Scoped Storage for Android 10+
+    return await Permission.storage.isGranted;
   }
 
-  /// Requests storage permission(s) from the user, primarily for file transfer.
-  ///
-  /// Uses the `permission_handler` package. See notes in [checkStoragePermission]
-  /// regarding changes in Android storage permissions and the recommended alternatives.
-  ///
-  /// This method requests the basic `Permission.storage`. Adapt as needed for
-  /// Scoped Storage or specific media permissions.
-  ///
-  /// Returns a [Future] completing with `true` if `Permission.storage` is granted
-  /// after the request, `false` otherwise.
   Future<bool> askStoragePermission() async {
-    // Request basic storage permission.
-    // On Android 11+, this might grant limited access or prompt for specific folder access.
-    // On Android 13+, this might have little effect without MANAGE_EXTERNAL_STORAGE.
+    // Consider Scoped Storage for Android 10+
     final status = await Permission.storage.request();
-
-    // Example for requesting media permissions on Android 13+:
-    // Map<Permission, PermissionStatus> statuses = await [
-    //   Permission.photos,
-    //   Permission.videos,
-    //   Permission.audio, // Request permissions relevant to your app
-    // ].request();
-    // return statuses.values.any((status) => status.isGranted); // Return true if any media permission granted
-
     return status.isGranted;
   }
 }
 
-/// The [FlutterP2pHost] class facilitates creating and managing a
-/// Wi-Fi Direct group (acting as a hotspot host) for P2P connections.
-///
-/// It allows initializing the host, creating a group (optionally advertising
-/// credentials via BLE), removing the group, listening for state changes,
-/// and sending/receiving data via the underlying [P2pTransportHost].
 class FlutterP2pHost extends _FlutterP2pConnection {
-  // Internal state flags
   bool _isGroupCreated = false;
   bool _isBleAdvertising = false;
-  // Instance of the transport layer handler for the host.
   P2pTransportHost? _p2pTransport;
+  HotspotHostState? _lastKnownHotspotState; // To store the latest state
 
-  /// Returns `true` if a Wi-Fi Direct group has been successfully created.
   bool get isGroupCreated => _isGroupCreated;
-
-  /// Returns `true` if the host is currently advertising hotspot credentials via BLE.
   bool get isAdvertising => _isBleAdvertising;
-
   List<P2pClientInfo> get clientList => _p2pTransport?.clientList ?? [];
 
-  /// Initializes the P2P connection host resources on the native platform.
-  ///
-  /// This method must be called before any other host operations.
-  /// It prepares the underlying platform-specific components.
   Future<void> initialize() async {
-    _p2pTransport = null; // Ensure transport is reset on initialize
+    _p2pTransport = null;
+    _lastKnownHotspotState = null;
     await FlutterP2pConnectionPlatform.instance.initialize();
   }
 
-  /// Disposes of the P2P connection host resources and cleans up connections.
-  ///
-  /// This method should be called when the host functionality is no longer needed
-  /// to release system resources. It attempts to remove any active group and stop
-  /// the transport layer first.
   Future<void> dispose() async {
-    // Ensure the group is removed (which stops transport) before disposing platform resources.
-    await removeGroup().catchError((_) => null);
+    try {
+      await removeGroup();
+    } catch (e) {
+      debugPrint("FlutterP2pHost: Error during removeGroup in dispose: $e");
+    }
     await FlutterP2pConnectionPlatform.instance.dispose();
+    _lastKnownHotspotState = null;
     debugPrint("FlutterP2pHost disposed.");
   }
 
-  /// Creates a Wi-Fi Direct group (hotspot) for P2P connections and starts the transport layer.
-  ///
-  /// After successful creation, it retrieves the hotspot's [HotspotHostState]
-  /// containing the SSID, Pre-Shared Key (PSK), and the host's IP address.
-  /// It then initializes and starts the [P2pTransportHost] on the obtained IP address.
-  ///
-  /// By default (`advertise = true`), it also starts advertising these credentials
-  /// via Bluetooth Low Energy (BLE) to allow clients to discover and connect.
-  ///
-  /// Throws an [Exception] or [TimeoutException] if the hotspot credentials (SSID/PSK/IP) cannot be
-  /// obtained within the timeout period.
-  ///
-  /// - [advertise]: If `true`, starts BLE advertising with the hotspot credentials.
-  ///                Defaults to `true`.
-  /// - [timeout]: Duration to wait for hotspot state confirmation (including IP). Defaults to 15 seconds.
-  ///
-  /// Returns a [Future] completing with the [HotspotHostState] containing
-  /// connection details (SSID, PSK, IP address).
   Future<HotspotHostState> createGroup({
     bool advertise = true,
-    Duration timeout = const Duration(seconds: 60), // Increased timeout
+    Duration timeout = const Duration(seconds: 60),
   }) async {
-    // Stop any existing transport first
-    await _p2pTransport?.stop().catchError((e) {
-      debugPrint('Error stopping previous P2P transport: $e');
-    });
+    if (_p2pTransport != null) {
+      await _p2pTransport!.stop().catchError((e) {
+        debugPrint('Host: Error stopping previous P2P transport: $e');
+      });
+    }
     _p2pTransport = null;
+    _lastKnownHotspotState = null;
 
-    // Initiate hotspot creation on the native side.
     await FlutterP2pConnectionPlatform.instance.createHotspot();
     _isGroupCreated = true;
     debugPrint("Host: Native hotspot creation initiated.");
 
-    // Wait for the hotspot state update containing valid credentials.
     HotspotHostState state;
     try {
-      debugPrint("Host: Waiting for active state...");
-      state = await streamHotspotState()
-          .firstWhere((s) =>
-              s.isActive && // Ensure group is active
-              s.ssid != null &&
-              s.preSharedKey != null)
-          .timeout(
+      state = await streamHotspotState().firstWhere((s) {
+        if (s.isActive &&
+            s.ssid != null &&
+            s.preSharedKey != null &&
+            s.hostIpAddress != null) {
+          _lastKnownHotspotState = s; // Store the valid state
+          return true;
+        }
+        return false;
+      }).timeout(
         timeout,
         onTimeout: () {
-          // Throw a specific exception on timeout
           throw TimeoutException(
-              'Host: Timed out after $timeout waiting for active hotspot state.');
+              'Host: Timed out after $timeout waiting for active hotspot state with IP.');
         },
       );
-      debugPrint("Host: Received active state: $state");
+      debugPrint("Host: Received active state with IP: $state");
     } catch (e) {
       debugPrint("Host: Error waiting for hotspot state: $e");
-      // Cleanup if state acquisition failed
-      await removeGroup().catchError((_) => null);
-      rethrow; // Propagate the error (could be TimeoutException or stream error)
+      await removeGroup().catchError((removeError) => debugPrint(
+          "Host: Error during cleanup after state acquisition failure: $removeError"));
+      rethrow;
     }
 
-    // Start BLE advertising if requested and credentials are valid.
     if (advertise) {
       try {
         await FlutterP2pConnectionPlatform.instance.startBleAdvertising(
@@ -354,19 +164,17 @@ class FlutterP2pHost extends _FlutterP2pConnection {
         _isBleAdvertising = true;
         debugPrint("Host: BLE advertising started.");
       } catch (e) {
-        // If advertising fails, log it but don't necessarily fail the group creation.
         debugPrint('Host: Failed to start BLE advertising: $e');
         _isBleAdvertising = false;
-        // Cleanup if state acquisition failed
-        await removeGroup().catchError((_) => null);
-        // Optionally rethrow if advertising is critical: throw Exception('Failed to start BLE advertising: $e');
+        await removeGroup().catchError((removeError) => debugPrint(
+            "Host: Error during cleanup after BLE advertising failure: $removeError"));
+        throw Exception(
+            'Host: Failed to start BLE advertising, which was requested: $e');
       }
     } else {
       _isBleAdvertising = false;
     }
 
-    // Create and start p2p transport stream
-    // The host IP address MUST be non-null here due to the firstWhere check above.
     _p2pTransport = P2pTransportHost(
       defaultPort: _defaultP2pTransportPort,
       username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
@@ -375,66 +183,55 @@ class FlutterP2pHost extends _FlutterP2pConnection {
       await _p2pTransport!.start();
     } catch (e) {
       debugPrint('Host: Failed to start P2P Transport: $e');
-      // Clean up group if transport fails to start, as it's likely unusable
-      await removeGroup().catchError((_) => null);
+      await removeGroup().catchError((removeError) => debugPrint(
+          "Host: Error during cleanup after P2P transport start failure: $removeError"));
       throw Exception('Host: Failed to start P2P Transport: $e');
     }
-
-    return state; // Return the obtained hotspot state.
+    return state;
   }
 
-  /// Removes the currently active Wi-Fi Direct group (hotspot).
-  ///
-  /// This stops BLE advertising (if active), stops the P2P transport layer,
-  /// and tears down the native hotspot group.
   Future<void> removeGroup() async {
     debugPrint("Host: Removing group...");
-    // Stop BLE advertising if it was active.
     if (_isBleAdvertising) {
       await FlutterP2pConnectionPlatform.instance
           .stopBleAdvertising()
           .catchError((e) {
-        // Log error but continue cleanup
         debugPrint('Host: Error stopping BLE advertising: $e');
       });
       _isBleAdvertising = false;
-      debugPrint("Host: BLE advertising stopped.");
     }
 
-    // Stop the transport layer if it exists and is running.
     await _p2pTransport?.stop().catchError((e) {
       debugPrint('Host: Error stopping P2P transport: $e');
     });
     _p2pTransport = null;
-    debugPrint("Host: P2P transport stopped.");
 
-    // Remove the hotspot on the native side if a group was created.
     if (_isGroupCreated) {
       await FlutterP2pConnectionPlatform.instance
           .removeHotspot()
           .catchError((e) {
-        // Log error but update state anyway
         debugPrint('Host: Error removing hotspot group natively: $e');
       });
       _isGroupCreated = false;
-      debugPrint("Host: Native hotspot removed.");
     }
+    _lastKnownHotspotState = null;
     debugPrint("Host: Group removal process finished.");
   }
 
-  /// Provides a stream of [HotspotHostState] updates from the platform.
-  ///
-  /// Listen to this stream to receive real-time information about the host's
-  /// hotspot status, including whether it's active, its SSID, PSK, IP address,
-  /// and any failure reasons.
-  ///
-  /// Returns a [Stream] of [HotspotHostState].
   Stream<HotspotHostState> streamHotspotState() {
-    return FlutterP2pConnectionPlatform.instance.streamHotspotInfo();
+    return FlutterP2pConnectionPlatform.instance
+        .streamHotspotInfo()
+        .map((state) {
+      if (state.isActive && state.hostIpAddress != null) {
+        _lastKnownHotspotState = state; // Keep track of the latest good state
+      } else if (!state.isActive && _lastKnownHotspotState?.isActive == true) {
+        // If it becomes inactive, clear our known good IP.
+        // _lastKnownHotspotState = state; // Store the inactive state
+      }
+      return state;
+    });
   }
 
-  /// Provides a stream that emits the updated list of connected [P2pClientInfo]s
-  /// whenever a client connects or disconnects.
   Stream<List<P2pClientInfo>> streamClientList() async* {
     while (true) {
       yield _p2pTransport?.clientList ?? [];
@@ -442,21 +239,13 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     }
   }
 
-  /// Broadcasts a [String] to all connected clients.
-  ///
-  /// - [text]: The [String] to send.
-  /// - [excludeClientIds]: Optional IDs of clients to exclude from the broadcast.
-  ///
-  /// Throws a [StateError] if the P2P transport is not active.
   Future<void> broadcastText(String text,
       {List<String>? excludeClientIds}) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
-      // Check if server is running
       throw StateError(
-          'Host: P2P transport is not active. Cannot broadcast. Ensure createGroup() was called successfully.');
+          'Host: P2P transport is not active. Ensure createGroup() was called successfully.');
     }
-    // Delegate broadcasting to the transport layer instance.
     var message = P2pMessage(
       senderId: transport.hostId,
       type: P2pMessageType.payload,
@@ -465,21 +254,12 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     await transport.broadcast(message, excludeClientIds: excludeClientIds);
   }
 
-  /// Sends a [String] to a specific client.
-  ///
-  /// - [text]: The [String] to send.
-  /// - [clientId]: The ID of the target client (obtained from `streamClientList`).
-  ///
-  /// Returns `true` if the client was found and message was sent, `false` otherwise.
-  /// Throws a [StateError] if the P2P transport is not active.
   Future<bool> sendTextToClient(String text, String clientId) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
-      // Check if server is running
       throw StateError(
-          'Host: P2P transport is not active. Cannot send. Ensure createGroup() was called successfully.');
+          'Host: P2P transport is not active. Ensure createGroup() was called successfully.');
     }
-    // Delegate sending to the transport layer instance.
     var message = P2pMessage(
       senderId: transport.hostId,
       type: P2pMessageType.payload,
@@ -492,35 +272,50 @@ class FlutterP2pHost extends _FlutterP2pConnection {
       {List<String>? excludeClientIds}) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
-      // Check if server is running
       throw StateError(
-          'Host: P2P transport is not active. Cannot broadcast. Ensure createGroup() was called successfully.');
+          'Host: P2P transport is not active for broadcasting file.');
     }
-    // Delegate broadcasting to the transport layer instance.
+    if (_lastKnownHotspotState?.hostIpAddress == null) {
+      throw StateError('Host: Host IP address is unknown. Cannot share file.');
+    }
     var recipients = excludeClientIds == null || excludeClientIds.isEmpty
         ? null
         : transport.clientList
             .where((client) => !excludeClientIds.contains(client.id))
             .toList();
-    return await transport.shareFile(file, recipients: recipients);
+    return await transport.shareFile(file,
+        actualSenderIp: _lastKnownHotspotState!.hostIpAddress!,
+        recipients: recipients);
   }
 
   Future<P2pFileInfo?> sendFileToClient(File file, String clientId) async {
     final transport = _p2pTransport;
     if (transport == null || transport.portInUse == null) {
-      // Check if server is running
-      throw StateError(
-          'Host: P2P transport is not active. Cannot send. Ensure createGroup() was called successfully.');
+      throw StateError('Host: P2P transport is not active for sending file.');
     }
-    // Delegate sending to the transport layer instance.
+    if (_lastKnownHotspotState?.hostIpAddress == null) {
+      throw StateError('Host: Host IP address is unknown. Cannot share file.');
+    }
     var recipients =
         transport.clientList.where((client) => client.id == clientId).toList();
-    return await transport.shareFile(file, recipients: recipients);
+    if (recipients.isEmpty) {
+      debugPrint("Host: Client $clientId not found for sending file.");
+      return null;
+    }
+    return await transport.shareFile(file,
+        actualSenderIp: _lastKnownHotspotState!.hostIpAddress!,
+        recipients: recipients);
   }
 
   Stream<String> streamReceivedTexts() async* {
+    // Yield immediately if transport is already available
+    if (_p2pTransport != null) {
+      yield* _p2pTransport!.receivedTextStream;
+      return; // Important to exit after yielding from existing stream
+    }
+    // Wait for transport to be initialized
     while (_p2pTransport == null) {
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 100)); // Shorter delay
     }
     yield* _p2pTransport!.receivedTextStream;
   }
@@ -544,22 +339,17 @@ class FlutterP2pHost extends _FlutterP2pConnection {
     String saveDirectory, {
     String? customFileName,
     bool? deleteOnError,
-    Function(FileDownloadProgressUpdate)? onProgress, // Callback for progress
-    // Optional range parameters
+    Function(FileDownloadProgressUpdate)? onProgress,
     int? rangeStart,
     int? rangeEnd,
   }) async {
     final transport = _p2pTransport;
-    // Check if transport is running
     if (transport == null || transport.portInUse == null) {
       throw StateError(
-          'Host: P2P transport is not active. Cannot download file. Ensure createGroup() was called successfully.');
+          'Host: P2P transport is not active. Ensure createGroup() was called successfully.');
     }
-    if (transport.clientList.isEmpty) {
-      throw StateError(
-          'Host: P2P transport is not connected to any clients. Cannot download file.');
-    }
-    // Download the file
+    // Host typically doesn't download from clients unless it's a specific feature
+    // For now, assume it's downloading a file it previously received info about.
     return await transport.downloadFile(
       fileId,
       saveDirectory,
@@ -572,71 +362,42 @@ class FlutterP2pHost extends _FlutterP2pConnection {
   }
 }
 
-/// The [FlutterP2pClient] class facilitates discovering and connecting
-/// to a P2P host (Wi-Fi Direct group).
-///
-/// It allows initializing the client, scanning for hosts via BLE, connecting
-/// to a discovered host (either via BLE data exchange or directly with credentials),
-/// disconnecting, listening for connection state changes, and sending/receiving
-/// data via the underlying [P2pTransportClient].
 class FlutterP2pClient extends _FlutterP2pConnection {
-  // Internal state flag
   bool _isScanning = false;
-  // Instance of the transport layer handler for the client.
   P2pTransportClient? _p2pTransport;
+  HotspotClientState? _lastKnownClientState; // To store client's IP in group
 
-  /// Returns `true` if the client is currently scanning for BLE devices.
+  StreamSubscription<List<BleDiscoveredDevice>>? _scanStreamSub;
+  Timer? _scanTimer;
+
   bool get isScanning => _isScanning;
-
-  /// Returns `true` if the client's P2P transport layer is connected to the host.
   bool get isConnected => _p2pTransport?.isConnected ?? false;
-
   List<P2pClientInfo> get clientList => _p2pTransport?.clientList ?? [];
 
-  /// Initializes the P2P connection client resources on the native platform.
-  ///
-  /// This method must be called before any other client operations.
-  /// It prepares the underlying platform-specific components.
   Future<void> initialize({String? clientId}) async {
-    await _p2pTransport?.dispose(); // Dispose previous transport if any
-    _p2pTransport = null; // Ensure transport is reset on initialize
+    await _p2pTransport?.dispose();
+    _p2pTransport = null;
+    _lastKnownClientState = null;
+    _scanStreamSub?.cancel();
+    _scanStreamSub = null;
+    _scanTimer?.cancel();
+    _scanTimer = null;
     await FlutterP2pConnectionPlatform.instance.initialize();
   }
 
-  /// Disposes of the P2P connection client resources and cleans up connections.
-  ///
-  /// This method should be called when the client functionality is no longer needed
-  /// to release system resources. It attempts to stop any active BLE scan,
-  /// disconnect the transport layer, and disconnect from any active hotspot first.
   Future<void> dispose() async {
-    // Ensure scanning is stopped before disposing.
-    await stopScan().catchError((_) => null);
-    // Ensure disconnection from hotspot (which also handles transport) before disposing.
-    await disconnect().catchError((_) => null);
-    // Dispose the transport explicitly if it wasn't handled by disconnect
-    await _p2pTransport?.dispose().catchError((_) => null);
+    await stopScan().catchError(
+        (e) => debugPrint("Client: Error stopping scan in dispose: $e"));
+    await disconnect().catchError(
+        (e) => debugPrint("Client: Error disconnecting in dispose: $e"));
+    await _p2pTransport?.dispose().catchError(
+        (e) => debugPrint("Client: Error disposing transport in dispose: $e"));
     _p2pTransport = null;
+    _lastKnownClientState = null;
     await FlutterP2pConnectionPlatform.instance.dispose();
     debugPrint("FlutterP2pClient disposed.");
   }
 
-  /// Starts scanning for nearby BLE devices advertising P2P host credentials.
-  ///
-  /// Listens to the BLE scan results stream and calls the [onData] callback
-  /// whenever new devices are found. The scan automatically stops after the
-  /// specified [timeout] duration (default 15 seconds).
-  ///
-  /// - [onData]: Callback function invoked with a list of [BleDiscoveredDevice] found
-  ///             during the scan. Can be null if only interested in completion/error.
-  /// - [onError]: Optional callback for handling errors during the scan stream.
-  /// - [onDone]: Optional callback invoked when the scan stream is closed (e.g., timeout or manual stop).
-  /// - [cancelOnError]: If `true`, the stream subscription cancels on the first error.
-  /// - [timeout]: Duration after which the scan will automatically stop. Defaults to 15 seconds.
-  ///
-  /// Returns a [Future] completing with the [StreamSubscription] for the scan results.
-  /// This subscription can be used to manually cancel the scan before the timeout.
-  ///
-  /// Throws an exception if starting the native BLE scan fails.
   Future<StreamSubscription<List<BleDiscoveredDevice>>> startScan(
     void Function(List<BleDiscoveredDevice>)? onData, {
     Function? onError,
@@ -645,194 +406,151 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     Duration timeout = const Duration(seconds: 15),
   }) async {
     if (_isScanning) {
-      // Avoid starting multiple scans concurrently by stopping the previous one.
       await stopScan();
     }
     debugPrint("Client: Starting BLE scan...");
+    _isScanning = true;
 
-    StreamSubscription<List<BleDiscoveredDevice>>? streamSub;
-    Timer? timer;
-
-    // Define cleanup logic
-    Future<void> cleanupScanResources() async {
-      debugPrint("Client: Cleaning up scan resources...");
-      timer?.cancel();
-      // Check if subscription exists and hasn't been cancelled yet
-      if (streamSub != null) {
-        try {
-          await streamSub?.cancel();
-          onDone?.call();
-          debugPrint("Client: Scan stream subscription cancelled.");
-        } catch (e) {
-          debugPrint("Client: Error cancelling scan stream subscription: $e");
-        }
-        streamSub = null; // Ensure it's marked as cancelled
-      }
-      // Only stop native scan if we initiated it and it's still considered active.
-      // Use a local flag to avoid race conditions with stopScan setting _isScanning
-      bool wasScanning = _isScanning;
-      if (wasScanning) {
-        await stopScan().catchError(// stopScan sets _isScanning to false
-            (e) =>
-                debugPrint("Client: Error stopping scan during cleanup: $e"));
-      }
-      debugPrint("Client: Scan resource cleanup finished.");
-    }
-
-    // Set up the stream listener first.
-    streamSub =
+    _scanStreamSub =
         FlutterP2pConnectionPlatform.instance.streamBleScanResult().listen(
-      onData,
+      (devices) {
+        if (_isScanning) onData?.call(devices);
+      },
       onError: (error) {
         debugPrint("Client: BLE Scan stream error: $error");
         onError?.call(error);
-        // Don't automatically cleanup here if cancelOnError is false
         if (cancelOnError ?? false) {
-          cleanupScanResources();
+          stopScan(); // This will also set _isScanning to false and clean up
         }
       },
       onDone: () {
-        debugPrint("Client: BLE Scan stream done.");
+        debugPrint("Client: BLE Scan stream done (completed or cancelled).");
+        // This onDone is critical. It means the stream is finished.
+        // We must ensure our state reflects this.
+        _isScanning = false; // Mark as not scanning
+        _scanTimer?.cancel();
+        _scanTimer = null;
+        // The native scan should be stopped by the platform when the stream ends,
+        // or by our explicit call in stopScan if we initiated the end.
+        // Call user's onDone.
         onDone?.call();
-        cleanupScanResources(); // Cleanup when stream naturally closes
+        _scanStreamSub = null; // Clear the subscription reference
       },
       cancelOnError: cancelOnError,
     );
 
-    // Schedule automatic stop after timeout.
-    timer = Timer(timeout, cleanupScanResources); // Use the cleanup function
+    _scanTimer = Timer(timeout, () {
+      debugPrint("Client: Scan timeout reached. Stopping scan.");
+      onDone?.call();
+      stopScan(); // This will cancel the stream and trigger its onDone.
+    });
 
-    // Start the native BLE scan.
     try {
       await FlutterP2pConnectionPlatform.instance.startBleScan();
-      _isScanning = true;
-      debugPrint("Client: Native BLE scan started.");
-      return streamSub!; // Return the subscription
+      debugPrint("Client: Native BLE scan started successfully.");
+      return _scanStreamSub!;
     } catch (e) {
-      // If starting the scan fails, clean up everything immediately.
-      debugPrint('Client: Failed to start BLE scan: $e');
-      await cleanupScanResources();
-      _isScanning = false; // Ensure state is reset
-      rethrow; // Propagate the error
+      debugPrint('Client: Failed to start native BLE scan: $e');
+      _isScanning = false; // Failed to start
+      _scanTimer?.cancel();
+      _scanTimer = null;
+      // Attempt to cancel the subscription, which should call its onDone for cleanup
+      await _scanStreamSub?.cancel();
+      _scanStreamSub = null;
+      rethrow;
     }
   }
 
-  /// Stops the ongoing BLE scan if one is active.
   Future<void> stopScan() async {
-    if (_isScanning) {
-      debugPrint("Client: Stopping BLE scan...");
-      _isScanning = false; // Set state immediately to prevent race conditions
-      await FlutterP2pConnectionPlatform.instance.stopBleScan().catchError((e) {
-        debugPrint('Client: Error stopping BLE scan natively: $e');
-        // State is already set to false
-      });
-      debugPrint("Client: BLE scan stopped.");
+    if (!_isScanning && _scanStreamSub == null && _scanTimer == null) {
+      return; // Already stopped or not properly started
     }
+    debugPrint("Client: Attempting to stop BLE scan...");
+
+    _isScanning = false; // Set our intent to stop
+
+    _scanTimer?.cancel();
+    _scanTimer = null;
+
+    if (_scanStreamSub != null) {
+      await _scanStreamSub!
+          .cancel(); // This should trigger the onDone of the stream listener
+      _scanStreamSub = null;
+    } else {
+      // If stream sub is null but we thought we were scanning, or timer was active.
+      // This case might happen if startScan failed after _isScanning=true but before sub was assigned.
+      // Or if stopScan is called multiple times.
+      // Ensure native scan is stopped if no Dart stream to cancel.
+      debugPrint(
+          "Client: No active scan stream subscription to cancel, ensuring native scan is stopped.");
+      await FlutterP2pConnectionPlatform.instance.stopBleScan().catchError((e) {
+        debugPrint(
+            'Client: Error stopping BLE scan natively during explicit stopScan (no stream sub): $e');
+      });
+    }
+    debugPrint("Client: BLE scan stop process finished.");
   }
 
-  /// Connects to a BLE device, retrieves hotspot credentials, and connects to the hotspot.
-  ///
-  /// 1. Connects to the specified BLE device.
-  /// 2. Listens for SSID and PSK data sent over BLE characteristics.
-  /// 3. Disconnects from the BLE device.
-  /// 4. Calls [connectWithCredentials] with the retrieved credentials.
-  ///
-  /// This method assumes the target BLE device is a P2P host advertising its
-  /// credentials according to a specific protocol (e.g., sending SSID then PSK
-  /// as separate messages on a specific characteristic).
-  ///
-  /// - [device]: The [BleDiscoveredDevice] to connect to.
-  /// - [timeout]: Duration to wait for credentials via BLE. Defaults to 20 seconds.
-  ///
-  /// Throws an [Exception] or [TimeoutException] if connecting to the BLE device fails,
-  /// if credentials are not received within the timeout, or if connecting to the
-  /// Wi-Fi hotspot subsequently fails.
   Future<void> connectWithDevice(
     BleDiscoveredDevice device, {
     Duration timeout = const Duration(seconds: 20),
   }) async {
     String deviceAddress = device.deviceAddress;
-    debugPrint("Client: Connecting to found device $deviceAddress via BLE...");
-    // Connect to the BLE device first.
+    debugPrint("Client: Connecting to BLE device $deviceAddress...");
     await FlutterP2pConnectionPlatform.instance.connectBleDevice(deviceAddress);
     debugPrint("Client: Connected to BLE device $deviceAddress.");
 
     String? ssid;
     String? psk;
     StreamSubscription<BleReceivedData>? bleDataSub;
+    final completer = Completer<void>();
 
     try {
-      // Listen for data received from the BLE device (expecting SSID and PSK).
-      final completer = Completer<void>();
-
-      debugPrint("Client: Waiting for SSID and PSK via BLE...");
       bleDataSub =
           FlutterP2pConnectionPlatform.instance.streamBleReceivedData().listen(
         (evt) {
-          // Basic protocol: expect SSID first, then PSK from the target device.
           if (evt.deviceAddress == deviceAddress) {
             String value = String.fromCharCodes(evt.data);
             if (ssid == null) {
               ssid = value;
               debugPrint("Client: Received SSID via BLE: $ssid");
-              // Still waiting for PSK
             } else if (psk == null) {
               psk = value;
-              debugPrint("Client: Received PSK via BLE"); // Don't log PSK
-              // Got both, complete the future successfully
-              if (!completer.isCompleted) {
-                completer.complete();
-              }
+              debugPrint("Client: Received PSK via BLE (not logging value)");
+              if (!completer.isCompleted) completer.complete();
             }
           }
         },
         onError: (error) {
-          debugPrint("Client: Error receiving BLE data: $error");
-          if (!completer.isCompleted) {
+          if (!completer.isCompleted)
             completer.completeError(
                 Exception('Client: Error receiving BLE data: $error'));
-          }
         },
         onDone: () {
-          debugPrint("Client: BLE data stream ended prematurely.");
-          if (!completer.isCompleted) {
+          if (!completer.isCompleted)
             completer.completeError(Exception(
-                'Client: BLE data stream ended before receiving both SSID and PSK.'));
-          }
+                'Client: BLE data stream ended before receiving credentials.'));
         },
       );
 
-      // Wait for the completer to finish, with a timeout.
       await completer.future.timeout(timeout, onTimeout: () {
         throw TimeoutException(
             'Client: Timed out waiting for hotspot credentials via BLE after $timeout.');
       });
 
-      // Cancel the subscription now that we have the data or timed out/errored.
-      await bleDataSub.cancel();
-      bleDataSub = null; // Ensure it's marked as cancelled
-
-      // Validate received credentials.
       if (ssid == null || psk == null) {
-        // This case should ideally be covered by the completer logic, but double-check.
         throw Exception(
-            'Client: Failed to receive valid hotspot SSID and PSK via BLE (completer finished unexpectedly).');
+            'Client: Failed to receive valid hotspot SSID and PSK via BLE.');
       }
 
-      // Credentials received, now connect to the Wi-Fi hotspot.
       debugPrint("Client: Attempting to connect to hotspot: $ssid");
-      // Delegate to the specific hotspot connection method which handles transport init.
-      await connectWithCredentials(ssid!, psk!); // Use non-null assertion
+      await connectWithCredentials(ssid!, psk!);
       debugPrint("Client: Successfully connected to hotspot: $ssid");
     } catch (e) {
       debugPrint("Client: Error during connectWithDevice: $e");
-      rethrow; // Propagate the error
+      rethrow;
     } finally {
-      // Always ensure the BLE data subscription is cancelled
       await bleDataSub?.cancel();
-      // Always disconnect from the BLE device after attempting connection
-      // or if an error occurred during credential exchange/hotspot connection.
-      debugPrint("Client: Disconnecting from BLE device $deviceAddress...");
       await FlutterP2pConnectionPlatform.instance
           .disconnectBleDevice(deviceAddress)
           .catchError((e) {
@@ -843,67 +561,51 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     }
   }
 
-  /// Connects directly to a Wi-Fi Direct hotspot and initializes the P2P transport client.
-  ///
-  /// 1. Initiates the native platform connection to the hotspot using SSID and PSK.
-  /// 2. Waits for the [HotspotClientState] stream to confirm an active connection
-  ///    with a valid gateway IP address.
-  /// 3. Initializes and connects the [P2pTransportClient] to the host's gateway IP.
-  ///
-  /// - [ssid]: The Service Set Identifier (network name) of the hotspot.
-  /// - [psk]: The Pre-Shared Key (password) for the hotspot.
-  /// - [timeout]: Duration to wait for successful Wi-Fi connection state confirmation. Defaults to 60 seconds.
-  ///
-  /// Throws an [Exception] or [TimeoutException] if the connection confirmation
-  /// (including obtaining the gateway IP) fails within the timeout period, or if
-  /// the subsequent P2P transport connection fails.
   Future<void> connectWithCredentials(
     String ssid,
     String psk, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration timeout =
+        const Duration(seconds: 60), // Increased default for Wi-Fi connection
   }) async {
     debugPrint("Client: Connecting to hotspot '$ssid'...");
-    // Stop any existing transport first
     await _p2pTransport?.disconnect().catchError((e) {
       debugPrint('Client: Error disconnecting previous P2P transport: $e');
     });
-    await _p2pTransport?.dispose(); // Also dispose it fully
+    await _p2pTransport?.dispose();
     _p2pTransport = null;
+    _lastKnownClientState = null;
 
-    // Initiate native connection
     await FlutterP2pConnectionPlatform.instance.connectToHotspot(ssid, psk);
     debugPrint("Client: Native connectToHotspot initiated for '$ssid'.");
 
-    // Wait for the hotspot state update containing valid gateway IP address.
     HotspotClientState state;
     try {
-      debugPrint(
-          "Client: Waiting for active connection state with gateway IP...");
-      state = await streamHotspotState()
-          .firstWhere(
-        (s) =>
-            s.isActive && // Must be active
-            s.hostSsid == ssid && // Must be the correct SSID
-            s.hostGatewayIpAddress != null, // Gateway IP is essential
-      )
-          .timeout(
+      state = await streamHotspotState().firstWhere((s) {
+        if (s.isActive &&
+            s.hostSsid == ssid &&
+            s.hostGatewayIpAddress != null &&
+            s.hostIpAddress != null) {
+          _lastKnownClientState = s; // Store the valid state
+          return true;
+        }
+        return false;
+      }).timeout(
         timeout,
         onTimeout: () {
           throw TimeoutException(
-              'Client: Timed out after $timeout waiting for active connection state with gateway IP.');
+              'Client: Timed out after $timeout waiting for active connection state with gateway and client IP.');
         },
       );
       debugPrint("Client: Received active connection state: $state");
     } catch (e) {
       debugPrint("Client: Error waiting for connection state: $e");
-      // Attempt cleanup if state acquisition failed
-      await disconnect().catchError((_) => null);
+      await disconnect().catchError((disconnectError) => debugPrint(
+          "Client: Error during cleanup after connection state failure: $disconnectError"));
       rethrow;
     }
 
-    // Initialize and connect P2pTransportClient after successful Wi-Fi connection.
     _p2pTransport = P2pTransportClient(
-      hostIp: state.hostGatewayIpAddress!, // IP is confirmed non-null here
+      hostIp: state.hostGatewayIpAddress!,
       defaultPort: _defaultP2pTransportPort,
       defaultFilePort: _defaultP2pTransportClientFileServerPort,
       username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
@@ -912,53 +614,47 @@ class FlutterP2pClient extends _FlutterP2pConnection {
       await _p2pTransport!.connect();
     } catch (e) {
       debugPrint('Client: Failed to connect P2P Transport: $e');
-      // Clean up Wi-Fi connection if transport fails to connect
-      await disconnect().catchError((_) => null);
-      await _p2pTransport?.dispose(); // Dispose transport
-      _p2pTransport = null;
+      await disconnect().catchError((disconnectError) => debugPrint(
+          "Client: Error during cleanup after P2P transport connection failure: $disconnectError"));
       throw Exception('Client: Failed to connect P2P Transport: $e');
     }
   }
 
-  /// Disconnects from the currently connected Wi-Fi Direct hotspot and stops the transport layer.
-  ///
-  /// This disconnects and disposes the [P2pTransportClient] first, then triggers the native
-  /// platform disconnection from the hotspot.
   Future<void> disconnect() async {
     debugPrint("Client: Disconnecting from hotspot...");
-    // Disconnect and dispose the transport layer first if it exists.
     await _p2pTransport?.disconnect().catchError((e) {
       debugPrint('Client: Error disconnecting P2P transport: $e');
     });
     await _p2pTransport?.dispose().catchError((e) {
       debugPrint('Client: Error disposing P2P transport: $e');
     });
-    _p2pTransport = null; // Clear the transport instance
-    debugPrint("Client: P2P transport disconnected and disposed.");
+    _p2pTransport = null;
+    _lastKnownClientState = null;
 
-    // Disconnect from the hotspot on the native side.
     await FlutterP2pConnectionPlatform.instance
         .disconnectFromHotspot()
         .catchError((e) {
       debugPrint('Client: Error disconnecting from hotspot natively: $e');
-      // Consider if state needs update even on error
     });
-    debugPrint("Client: Native hotspot disconnection initiated.");
+    debugPrint("Client: Native hotspot disconnection process finished.");
   }
 
-  /// Provides a stream of [HotspotClientState] updates from the platform.
-  ///
-  /// Listen to this stream to receive real-time information about the client's
-  /// connection status to a hotspot, including whether it's connected, the
-  /// host's SSID, and IP address details (gateway and client IP).
-  ///
-  /// Returns a [Stream] of [HotspotClientState].
   Stream<HotspotClientState> streamHotspotState() {
-    return FlutterP2pConnectionPlatform.instance.streamHotspotClientState();
+    return FlutterP2pConnectionPlatform.instance
+        .streamHotspotClientState()
+        .map((state) {
+      if (state.isActive &&
+          state.hostGatewayIpAddress != null &&
+          state.hostIpAddress != null) {
+        _lastKnownClientState = state; // Keep track of the latest good state
+      } else if (!state.isActive && _lastKnownClientState?.isActive == true) {
+        // If it becomes inactive, clear our known good state.
+        // _lastKnownClientState = state; // Store the inactive state
+      }
+      return state;
+    });
   }
 
-  /// Provides a stream that emits the updated list of connected [P2pClientInfo]s
-  /// whenever a client connects or disconnects.
   Stream<List<P2pClientInfo>> streamClientList() async* {
     while (true) {
       yield _p2pTransport?.clientList ?? [];
@@ -966,61 +662,45 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     }
   }
 
-  /// Broadcasts a [String] to all connected clients.
-  ///
-  /// - [text]: The [String] to send.
-  /// - [excludeClientId]: Optional ID of a client to exclude from the broadcast.
-  ///
-  /// Throws a [StateError] if the P2P transport is not active.
-  Future<void> broadcastText(
-    String text, {
-    String? excludeClientId,
-  }) async {
+  Future<void> broadcastText(String text, {String? excludeClientId}) async {
     final transport = _p2pTransport;
-    // Check if transport is running
     if (transport == null || !transport.isConnected) {
       throw StateError(
           'Client: P2P transport is not connected. Cannot broadcast data.');
     }
-    // Delegate broadcasting to the transport layer instance.
     var message = P2pMessage(
       senderId: transport.clientId,
       type: P2pMessageType.payload,
       payload: P2pMessagePayload(text: text),
-      // Specify the clients that'll receive the message
       clients: transport.clientList
-          .where((client) => client.id != excludeClientId)
-          .toList(),
+          .where((client) =>
+              client.id != excludeClientId && client.id != transport.clientId)
+          .toList(), // Exclude self and optionally another
     );
     await transport.send(message);
   }
 
-  /// Sends a [String] to a specific client.
-  ///
-  /// - [text]: The [String] to send.
-  /// - [clientId]: The ID of the target client (obtained from `streamClientList`).
-  ///
-  /// Returns `true` if the client was found and message was sent, `false` otherwise.
-  /// Throws a [StateError] if the P2P transport is not active.
-  Future<bool> sendTextToClient(
-    String text,
-    String clientId,
-  ) async {
+  Future<bool> sendTextToClient(String text, String clientId) async {
     final transport = _p2pTransport;
-    // Check if transport is running
     if (transport == null || !transport.isConnected) {
       throw StateError(
           'Client: P2P transport is not connected. Cannot send data.');
     }
-    // Delegate sending to the transport layer instance.
+    final targetClient = transport.clientList.firstWhere(
+        (c) => c.id == clientId,
+        orElse: () => P2pClientInfo(
+            id: "null",
+            username: "null",
+            isHost: false)); // Find the client info
+    if (targetClient.id == "null") {
+      debugPrint("Client: Target client $clientId not found in client list.");
+      return false;
+    }
     var message = P2pMessage(
       senderId: transport.clientId,
       type: P2pMessageType.payload,
       payload: P2pMessagePayload(text: text),
-      // Specify the clients that'll receive the message
-      clients: transport.clientList
-          .where((client) => client.id == clientId)
-          .toList(),
+      clients: [targetClient], // Target only the specific client
     );
     return await transport.send(message);
   }
@@ -1030,32 +710,53 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     final transport = _p2pTransport;
     if (transport == null || !transport.isConnected) {
       throw StateError(
-          'Client: P2P transport is not connected. Cannot broadcast data.');
+          'Client: P2P transport is not connected for broadcasting file.');
     }
-    // Delegate broadcasting to the transport layer instance.
-    var recipients = excludeClientIds == null || excludeClientIds.isEmpty
-        ? null
-        : transport.clientList
-            .where((client) => !excludeClientIds.contains(client.id))
-            .toList();
-    return await transport.shareFile(file, recipients: recipients);
+    if (_lastKnownClientState?.hostIpAddress == null) {
+      // This is client's own IP in group
+      throw StateError(
+          'Client: Client IP address in group is unknown. Cannot share file.');
+    }
+
+    var recipients = transport.clientList
+        .where((client) =>
+            client.id != transport.clientId &&
+            (excludeClientIds == null || !excludeClientIds.contains(client.id)))
+        .toList();
+    return await transport.shareFile(file,
+        actualSenderIp: _lastKnownClientState!.hostIpAddress!,
+        recipients: recipients);
   }
 
   Future<P2pFileInfo?> sendFileToClient(File file, String clientId) async {
     final transport = _p2pTransport;
     if (transport == null || !transport.isConnected) {
       throw StateError(
-          'Client: P2P transport is not connected. Cannot send data.');
+          'Client: P2P transport is not connected for sending file.');
     }
-    // Delegate sending to the transport layer instance.
+    if (_lastKnownClientState?.hostIpAddress == null) {
+      // This is client's own IP in group
+      throw StateError(
+          'Client: Client IP address in group is unknown. Cannot share file.');
+    }
     var recipients =
         transport.clientList.where((client) => client.id == clientId).toList();
-    return await transport.shareFile(file, recipients: recipients);
+    if (recipients.isEmpty) {
+      debugPrint("Client: Target client $clientId not found for sending file.");
+      return null;
+    }
+    return await transport.shareFile(file,
+        actualSenderIp: _lastKnownClientState!.hostIpAddress!,
+        recipients: recipients);
   }
 
   Stream<String> streamReceivedTexts() async* {
+    if (_p2pTransport != null) {
+      yield* _p2pTransport!.receivedTextStream;
+      return;
+    }
     while (_p2pTransport == null) {
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 100));
     }
     yield* _p2pTransport!.receivedTextStream;
   }
@@ -1079,22 +780,15 @@ class FlutterP2pClient extends _FlutterP2pConnection {
     String saveDirectory, {
     String? customFileName,
     bool? deleteOnError,
-    Function(FileDownloadProgressUpdate)? onProgress, // Callback for progress
-    // Optional range parameters
+    Function(FileDownloadProgressUpdate)? onProgress,
     int? rangeStart,
     int? rangeEnd,
   }) async {
     final transport = _p2pTransport;
-    // Check if transport is running
     if (transport == null || !transport.isConnected) {
       throw StateError(
           'Client: P2P transport is not connected. Cannot download file.');
     }
-    if (transport.clientList.isEmpty) {
-      throw StateError(
-          'Client: P2P transport is not connected to any clients. Cannot download file.');
-    }
-    // Download the file
     return await transport.downloadFile(
       fileId,
       saveDirectory,
@@ -1107,28 +801,14 @@ class FlutterP2pClient extends _FlutterP2pConnection {
   }
 }
 
-/// Represents the state of the Wi-Fi Direct group (hotspot) created by the host.
-///
-/// Contains information about the hotspot's status and connection details.
 @immutable
 class HotspotHostState {
-  /// `true` if the hotspot is currently active and ready for connections.
   final bool isActive;
-
-  /// The Service Set Identifier (network name) of the hotspot. Null if inactive or not yet determined.
   final String? ssid;
-
-  /// The Pre-Shared Key (password) of the hotspot. Null if inactive or not yet determined.
   final String? preSharedKey;
-
-  /// The IP address of the host device within the created group. Null if inactive or not yet assigned.
   final String? hostIpAddress;
-
-  /// A platform-specific code indicating the reason for failure, if [isActive] is `false`.
-  /// Interpretation depends on the underlying native implementation (e.g., Android WifiP2pManager failure codes).
   final int? failureReason;
 
-  /// Creates a representation of the host's hotspot state.
   const HotspotHostState({
     required this.isActive,
     this.ssid,
@@ -1137,10 +817,9 @@ class HotspotHostState {
     this.failureReason,
   });
 
-  /// Creates a [HotspotHostState] instance from a map (typically from platform channel).
   factory HotspotHostState.fromMap(Map<dynamic, dynamic> map) {
     return HotspotHostState(
-      isActive: map['isActive'] as bool? ?? false, // Provide default
+      isActive: map['isActive'] as bool? ?? false,
       ssid: map['ssid'] as String?,
       preSharedKey: map['preSharedKey'] as String?,
       hostIpAddress: map['hostIpAddress'] as String?,
@@ -1148,7 +827,6 @@ class HotspotHostState {
     );
   }
 
-  /// Converts the [HotspotHostState] instance to a map.
   Map<String, dynamic> toMap() {
     return {
       'isActive': isActive,
@@ -1167,7 +845,6 @@ class HotspotHostState {
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-
     return other is HotspotHostState &&
         other.isActive == isActive &&
         other.ssid == ssid &&
@@ -1177,57 +854,35 @@ class HotspotHostState {
   }
 
   @override
-  int get hashCode {
-    return Object.hash(
-      isActive,
-      ssid,
-      preSharedKey,
-      hostIpAddress,
-      failureReason,
-    );
-  }
+  int get hashCode =>
+      Object.hash(isActive, ssid, preSharedKey, hostIpAddress, failureReason);
 }
 
-/// Represents the state of the client's connection to a Wi-Fi Direct group (hotspot).
-///
-/// Contains information about the connection status and network details obtained from the host.
 @immutable
 class HotspotClientState {
-  /// `true` if the client is currently connected to a hotspot.
   final bool isActive;
-
-  /// The SSID (network name) of the hotspot the client is connected to. Null if inactive.
   final String? hostSsid;
-
-  /// The IP address of the gateway (usually the host device) in the hotspot network. Null if inactive or not yet determined.
-  final String? hostGatewayIpAddress;
-
-  /// The IP address assigned to the client device within the hotspot network. Null if inactive or not yet assigned.
-  /// Note: This field name might be slightly misleading based on common usage;
-  /// it typically represents the *client's* own IP address within the P2P group.
-  /// Verify with platform implementation if precise meaning is critical.
   final String?
-      hostIpAddress; // Consider renaming to clientIpAddress if confirmed
+      hostGatewayIpAddress; // Host's Gateway IP (for WebSocket connection)
+  final String?
+      hostIpAddress; // Client's own IP in the P2P group (for its file server)
 
-  /// Creates a representation of the client's connection state.
   const HotspotClientState({
     required this.isActive,
     this.hostSsid,
     this.hostGatewayIpAddress,
-    this.hostIpAddress, // Client's IP in the group
+    this.hostIpAddress,
   });
 
-  /// Creates a [HotspotClientState] instance from a map (typically from platform channel).
   factory HotspotClientState.fromMap(Map<dynamic, dynamic> map) {
     return HotspotClientState(
-      isActive: map['isActive'] as bool? ?? false, // Provide default
+      isActive: map['isActive'] as bool? ?? false,
       hostSsid: map['hostSsid'] as String?,
       hostGatewayIpAddress: map['hostGatewayIpAddress'] as String?,
-      hostIpAddress: map['hostIpAddress'] as String?, // Client's IP
+      hostIpAddress: map['hostIpAddress'] as String?,
     );
   }
 
-  /// Converts the [HotspotClientState] instance to a map.
   Map<String, dynamic> toMap() {
     return {
       'isActive': isActive,
@@ -1239,14 +894,12 @@ class HotspotClientState {
 
   @override
   String toString() {
-    // Use clientIpAddress in toString for clarity
-    return 'HotspotClientState(isActive: $isActive, hostSsid: $hostSsid, hostGatewayIpAddress: $hostGatewayIpAddress, clientIpAddress: $hostIpAddress)';
+    return 'HotspotClientState(isActive: $isActive, hostSsid: $hostSsid, hostGatewayIpAddress: $hostGatewayIpAddress, clientIpAddressInGroup: $hostIpAddress)';
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-
     return other is HotspotClientState &&
         other.isActive == isActive &&
         other.hostSsid == hostSsid &&
@@ -1255,49 +908,30 @@ class HotspotClientState {
   }
 
   @override
-  int get hashCode {
-    return Object.hash(
-      isActive,
-      hostSsid,
-      hostGatewayIpAddress,
-      hostIpAddress,
-    );
-  }
+  int get hashCode =>
+      Object.hash(isActive, hostSsid, hostGatewayIpAddress, hostIpAddress);
 }
 
-/// Represents the connection state of a specific BLE device.
-///
-/// Used potentially by [FlutterP2pConnection.streamBleConnectionState] if exposed.
 @immutable
 class BleConnectionState {
-  /// The MAC address of the BLE device.
   final String deviceAddress;
-
-  /// The name of the BLE device (as advertised or retrieved). May be empty or default.
   final String deviceName;
-
-  /// `true` if the client is currently connected to this BLE device.
   final bool isConnected;
 
-  /// Creates a representation of a BLE device's connection state.
   const BleConnectionState({
     required this.deviceAddress,
     required this.deviceName,
     required this.isConnected,
   });
 
-  /// Creates a [BleConnectionState] instance from a map (typically from platform channel).
   factory BleConnectionState.fromMap(Map<dynamic, dynamic> map) {
     return BleConnectionState(
-      deviceAddress: map['deviceAddress'] as String? ??
-          'Unknown Address', // Provide default
-      deviceName:
-          map['deviceName'] as String? ?? 'Unknown Name', // Provide default
-      isConnected: map['isConnected'] as bool? ?? false, // Provide default
+      deviceAddress: map['deviceAddress'] as String? ?? 'Unknown Address',
+      deviceName: map['deviceName'] as String? ?? 'Unknown Name',
+      isConnected: map['isConnected'] as bool? ?? false,
     );
   }
 
-  /// Converts the [BleConnectionState] instance to a map.
   Map<String, dynamic> toMap() {
     return {
       'deviceAddress': deviceAddress,
@@ -1314,7 +948,6 @@ class BleConnectionState {
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-
     return other is BleConnectionState &&
         other.deviceAddress == deviceAddress &&
         other.deviceName == deviceName &&
@@ -1322,41 +955,28 @@ class BleConnectionState {
   }
 
   @override
-  int get hashCode {
-    return Object.hash(deviceAddress, deviceName, isConnected);
-  }
+  int get hashCode => Object.hash(deviceAddress, deviceName, isConnected);
 }
 
-/// Represents a BLE device found during a scan.
-///
-/// Contains basic information about the discovered device.
 @immutable
 class BleDiscoveredDevice {
-  /// The MAC address of the discovered BLE device.
   final String deviceAddress;
-
-  /// The advertised name of the BLE device. May be empty or a default name like "Unknown Device".
   final String deviceName;
 
-  /// Creates a representation of a discovered BLE device.
   const BleDiscoveredDevice({
     required this.deviceAddress,
     required this.deviceName,
   });
 
-  /// Creates a [BleDiscoveredDevice] instance from a map (typically from platform channel).
   factory BleDiscoveredDevice.fromMap(Map<dynamic, dynamic> map) {
     return BleDiscoveredDevice(
-      deviceAddress: map['deviceAddress'] as String? ??
-          'Unknown Address', // Provide default
-      // Handle potential null or empty names from native side
+      deviceAddress: map['deviceAddress'] as String? ?? 'Unknown Address',
       deviceName: (map['deviceName'] as String?)?.isNotEmpty ?? false
           ? map['deviceName'] as String
-          : 'Unknown Device', // Provide default name
+          : 'Unknown Device',
     );
   }
 
-  /// Converts the [BleDiscoveredDevice] instance to a map.
   Map<String, dynamic> toMap() {
     return {
       'deviceAddress': deviceAddress,
@@ -1372,52 +992,36 @@ class BleDiscoveredDevice {
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-
     return other is BleDiscoveredDevice &&
         other.deviceAddress == deviceAddress &&
         other.deviceName == deviceName;
   }
 
   @override
-  int get hashCode {
-    return Object.hash(deviceAddress, deviceName);
-  }
+  int get hashCode => Object.hash(deviceAddress, deviceName);
 }
 
-/// Represents data received from a connected BLE device via a characteristic.
-///
-/// Used internally during the [FlutterP2pClient.connectWithDevice] process.
 @immutable
 class BleReceivedData {
-  /// The MAC address of the BLE device from which data was received.
   final String deviceAddress;
-
-  /// The UUID of the GATT characteristic that sent the data (if available from platform).
   final String characteristicUuid;
-
-  /// The raw byte data received from the characteristic.
   final Uint8List data;
 
-  /// Creates a representation of received BLE data.
   const BleReceivedData({
     required this.deviceAddress,
     required this.characteristicUuid,
     required this.data,
   });
 
-  /// Creates a [BleReceivedData] instance from a map (typically from platform channel).
   factory BleReceivedData.fromMap(Map<dynamic, dynamic> map) {
     return BleReceivedData(
-      deviceAddress: map['deviceAddress'] as String? ??
-          'Unknown Address', // Provide default
-      characteristicUuid: map['characteristicUuid'] as String? ??
-          'Unknown UUID', // Provide default
-      // Ensure data is always a Uint8List, even if null/empty from platform
+      deviceAddress: map['deviceAddress'] as String? ?? 'Unknown Address',
+      characteristicUuid:
+          map['characteristicUuid'] as String? ?? 'Unknown UUID',
       data: map['data'] as Uint8List? ?? Uint8List(0),
     );
   }
 
-  /// Converts the [BleReceivedData] instance to a map.
   Map<String, dynamic> toMap() {
     return {
       'deviceAddress': deviceAddress,
@@ -1428,7 +1032,6 @@ class BleReceivedData {
 
   @override
   String toString() {
-    // Avoid printing large byte arrays directly to the console
     final dataSummary = data.length > 16
         ? '${data.sublist(0, 8)}... (${data.length} bytes)'
         : data.toString();
@@ -1438,16 +1041,13 @@ class BleReceivedData {
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-
     return other is BleReceivedData &&
         other.deviceAddress == deviceAddress &&
         other.characteristicUuid == characteristicUuid &&
-        listEquals(other.data, data); // Use listEquals for byte comparison
+        listEquals(other.data, data);
   }
 
   @override
-  int get hashCode {
-    // Combine hashes using Object.hash for better distribution
-    return Object.hash(deviceAddress, characteristicUuid, Object.hashAll(data));
-  }
+  int get hashCode =>
+      Object.hash(deviceAddress, characteristicUuid, Object.hashAll(data));
 }
