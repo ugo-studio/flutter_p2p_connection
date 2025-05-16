@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
@@ -22,11 +23,11 @@ class _ClientPageState extends State<ClientPage> {
 
   HotspotClientState? hotspotState;
   List<BleDiscoveredDevice> discoveredDevices = [];
+  bool _isDiscovering = false;
 
   @override
   void initState() {
     super.initState();
-
     flutterP2P = FlutterP2pClient();
     flutterP2P.initialize().whenComplete(() {
       hotspotStateStream = flutterP2P.streamHotspotState().listen((state) {
@@ -35,7 +36,7 @@ class _ClientPageState extends State<ClientPage> {
         });
       });
       receivedTextStream = flutterP2P.streamReceivedTexts().listen((text) {
-        snack('Received text message: ${text}');
+        snack('Received text: $text');
       });
     });
   }
@@ -52,11 +53,63 @@ class _ClientPageState extends State<ClientPage> {
   void snack(String msg) async {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        duration: const Duration(seconds: 4),
-        content: Text(
-          msg,
-        ),
+        duration: const Duration(seconds: 2),
+        content: Text(msg),
       ),
+    );
+  }
+
+  void _showPermissionsDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Permissions & Services"),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    askRequiredPermission();
+                  },
+                  child: const Text("Request Permissions"),
+                ),
+                const Divider(),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    enableWifi();
+                  },
+                  child: const Text("Enable Wi-Fi"),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    enableLocation();
+                  },
+                  child: const Text("Enable Location"),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    enableBluetooth();
+                  },
+                  child: const Text("Enable Bluetooth"),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -64,67 +117,116 @@ class _ClientPageState extends State<ClientPage> {
     var storageGranted = await flutterP2P.askStoragePermission();
     var p2pGranted = await flutterP2P.askP2pPermissions();
     var bleGranted = await flutterP2P.askBluetoothPermissions();
-    snack(
-        "Storage permission: $storageGranted\n\nP2p permission: $p2pGranted\n\nBluetooth permission: $bleGranted");
+    snack("Storage: $storageGranted, P2P: $p2pGranted, Bluetooth: $bleGranted");
   }
 
   void enableWifi() async {
     var wifiEnabled = await flutterP2P.enableWifiServices();
-    snack("enabling wifi: $wifiEnabled");
+    snack("Wi-Fi enabled: $wifiEnabled");
   }
 
   void enableLocation() async {
     var locationEnabled = await flutterP2P.enableLocationServices();
-    snack("enabling location: $locationEnabled");
+    snack("Location enabled: $locationEnabled");
   }
 
   void enableBluetooth() async {
     var bluetoothEnabled = await flutterP2P.enableBluetoothServices();
-    snack("enabling bluetooth: $bluetoothEnabled");
+    snack("Bluetooth enabled: $bluetoothEnabled");
   }
 
   void startPeerDiscovery() async {
-    await flutterP2P.startScan((devices) {
-      setState(() {
-        discoveredDevices = devices;
-      });
-    });
-    snack('started peer discovery');
-  }
-
-  void connectWithDevice(int index) async {
-    var device = discoveredDevices[index];
-    await flutterP2P.connectWithDevice(device);
-    snack('connected to ${device.deviceAddress}');
+    if (_isDiscovering) {
+      snack('Already discovering peers.');
+      return;
+    }
     setState(() {
+      _isDiscovering = true;
       discoveredDevices.clear();
     });
+    snack('Starting peer discovery...');
+    try {
+      await flutterP2P.startScan(
+        (devices) {
+          setState(() {
+            discoveredDevices = devices;
+          });
+        },
+        onDone: () {
+          setState(() {
+            _isDiscovering = false;
+          });
+          snack('Peer discovery finished.');
+        },
+        onError: (error) {
+          setState(() {
+            _isDiscovering = false;
+          });
+          snack('Peer discovery error: $error');
+        },
+      );
+    } catch (e) {
+      setState(() {
+        _isDiscovering = false;
+      });
+      snack('Failed to start peer discovery: $e');
+    }
   }
 
-  void connectWithCredentials(ssid, preSharedKey) async {
+  void connectWithDevice(BleDiscoveredDevice device) async {
+    snack('Connecting to ${device.deviceName}...');
+    try {
+      await flutterP2P.connectWithDevice(device);
+      snack('Connected to ${device.deviceName}');
+      setState(() {
+        discoveredDevices.clear();
+        _isDiscovering = false;
+      });
+    } catch (e) {
+      snack('Failed to connect: $e');
+    }
+  }
+
+  void connectWithCredentials(String ssid, String preSharedKey) async {
+    snack('Connecting with credentials...');
     try {
       await flutterP2P.connectWithCredentials(ssid, preSharedKey);
-      snack("connected");
+      snack("Connected to $ssid");
     } catch (e) {
-      snack("failed to connect: $e");
+      snack("Failed to connect: $e");
     }
   }
 
   void disconnect() async {
+    snack('Disconnecting...');
     await flutterP2P.disconnect();
-    snack("disconnected");
+    snack("Disconnected");
+    setState(() {});
   }
 
   void sendMessage() async {
     var text = textEditingController.text;
-    if (text.isEmpty) return;
+    if (text.isEmpty) {
+      snack('Enter a message to send.');
+      return;
+    }
+    if (!(hotspotState?.isActive == true)) {
+      snack('Not connected to any host.');
+      return;
+    }
     await flutterP2P.broadcastText(text);
+    textEditingController.clear();
+    snack('Message sent.');
   }
 
   void sendFile() async {
+    if (!(hotspotState?.isActive == true)) {
+      snack('Not connected to any host.');
+      return;
+    }
     String? path = await FilesystemPicker.open(
       context: context,
-      title: 'Select file',
+      title: 'Select file to send',
       fsType: FilesystemType.file,
       rootDirectory: Directory('/storage/emulated/0/'),
       fileTileSelectMode: FileTileSelectMode.wholeTile,
@@ -133,261 +235,293 @@ class _ClientPageState extends State<ClientPage> {
     if (path != null) {
       File file = File(path);
       flutterP2P.broadcastFile(file);
-      snack("file sent to clients");
+      snack("Sending file: ${file.path.split('/').last}");
     } else {
-      snack("user canceled file picker");
+      snack("File selection canceled.");
     }
+  }
+
+  Widget _buildSection(String title, List<Widget> children) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 10),
+            ...children,
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    bool isConnected = hotspotState?.isActive == true;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Client'),
+        title: const Text('P2P Client'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_applications),
+            onPressed: _showPermissionsDialog,
+            tooltip: "Permissions & Services",
+          )
+        ],
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Ask required permissions
-              ElevatedButton(
-                onPressed: askRequiredPermission,
-                child: const Text("ask required permissions"),
-              ),
-
-              // Enable required services
-              ElevatedButton(
-                onPressed: enableWifi,
-                child: const Text("enable wifi"),
-              ),
-              ElevatedButton(
-                onPressed: enableLocation,
-                child: const Text("enable location"),
-              ),
-              ElevatedButton(
-                onPressed: enableBluetooth,
-                child: const Text("enable bluetooth"),
-              ),
-              const SizedBox(height: 30),
-
-              // hotspot creds share methods
-              ElevatedButton(
-                onPressed: startPeerDiscovery,
-                child: const Text(
-                  "start bluetooth peer discovery",
-                  style: TextStyle(color: Colors.blue),
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            _buildSection(
+              "Connection Status",
+              [
+                Text(
+                  isConnected
+                      ? "Connected to: ${hotspotState?.hostSsid ?? 'Unknown'}"
+                      : "Not Connected",
+                  style: TextStyle(
+                      color: isConnected ? Colors.green : Colors.red,
+                      fontSize: 16),
                 ),
-              ),
-              const Text('OR'),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ScannerPage(
-                        onScanned: connectWithCredentials,
-                      ),
+                if (isConnected && hotspotState?.hostGatewayIpAddress != null)
+                  Text("Host IP: ${hotspotState!.hostGatewayIpAddress!}"),
+                if (isConnected && hotspotState?.hostIpAddress != null)
+                  Text("My IP: ${hotspotState!.hostIpAddress!}"),
+              ],
+            ),
+            _buildSection(
+              "Connect to Host",
+              [
+                Wrap(
+                  spacing: 8.0,
+                  runSpacing: 4.0,
+                  children: [
+                    ElevatedButton.icon(
+                      icon: _isDiscovering
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.bluetooth_searching),
+                      label: Text(_isDiscovering
+                          ? "Discovering... (${discoveredDevices.length})"
+                          : "Discover (BLE)"),
+                      onPressed: !isConnected && !_isDiscovering
+                          ? startPeerDiscovery
+                          : null,
                     ),
-                  );
-                },
-                child: const Text(
-                  "scan qrcode and connect",
-                  style: TextStyle(color: Colors.black),
-                ),
-              ),
-              const SizedBox(height: 30),
-
-              // hotspot disconect
-              hotspotState?.isActive == true
-                  ? ElevatedButton(
-                      onPressed: disconnect,
-                      child: const Text(
-                        "disconnect",
-                        style: TextStyle(color: Colors.orange),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-              const SizedBox(height: 30),
-
-              // display scan result
-              discoveredDevices.isNotEmpty
-                  ? Center(
-                      child: Column(
-                        children: [
-                          const Text("Discovered devices:"),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 200,
-                            child: ListView.builder(
-                              itemCount: discoveredDevices.length,
-                              itemBuilder: (context, index) => ListTile(
-                                title:
-                                    Text(discoveredDevices[index].deviceName),
-                                subtitle: Text(
-                                    discoveredDevices[index].deviceAddress),
-                                trailing: ElevatedButton(
-                                  onPressed: () => connectWithDevice(index),
-                                  child: const Text("connect"),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 30),
-                        ],
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-
-              // display client list
-              StreamBuilder(
-                stream: flutterP2P.streamClientList(),
-                builder: (context, snapshot) {
-                  var clientList = snapshot.data ?? [];
-                  return Center(
-                    child: Column(
-                      children: [
-                        Text(
-                            "Connected devices (${clientList.isEmpty ? 'empty' : clientList.length}):"),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 200,
-                          child: ListView.builder(
-                            itemCount: clientList.length,
-                            itemBuilder: (context, index) => ListTile(
-                              title: Text(clientList[index].username),
-                              subtitle:
-                                  Text('isHost: ${clientList[index].isHost}'),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 30),
-
-              // send messages
-              const Text("Send text messages:"),
-              TextField(
-                controller: textEditingController,
-                keyboardType: TextInputType.text,
-                decoration: const InputDecoration(
-                  hintText: 'Enter your message here',
-                ),
-              ),
-              ElevatedButton(
-                onPressed: sendMessage,
-                child: const Text('Send Text'),
-              ),
-              const SizedBox(height: 30),
-
-              // Send File
-              ElevatedButton(
-                onPressed: sendFile,
-                child: const Text(
-                  "Send file",
-                  style: TextStyle(color: Colors.green),
-                ),
-              ),
-              const SizedBox(height: 30),
-
-              // display received files
-              StreamBuilder(
-                stream: flutterP2P.streamReceivedFilesInfo(),
-                builder: (context, snapshot) {
-                  var receivedFiles = snapshot.data ?? [];
-                  return Center(
-                    child: Column(
-                      children: [
-                        Text(
-                            "Received files (${receivedFiles.isEmpty ? 'empty' : receivedFiles.length}):"),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 200,
-                          child: ListView.builder(
-                            itemCount: receivedFiles.length,
-                            itemBuilder: (context, index) {
-                              var file = receivedFiles[index];
-                              var percent =
-                                  file.downloadProgressPercent.round();
-
-                              return ListTile(
-                                title: Text(file.info.name),
-                                subtitle:
-                                    Text("state: ${file.state}, $percent%"),
-                                trailing: file.state == ReceivableFileState.idle
-                                    ? ElevatedButton(
-                                        onPressed: () async {
-                                          var downloaded =
-                                              await flutterP2P.downloadFile(
-                                                  file.info.id,
-                                                  '/storage/emulated/0/Download/');
-                                          snack("Download file: $downloaded");
-                                        },
-                                        child: Text('download'),
-                                      )
-                                    : SizedBox.shrink(),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 30),
-
-              // display sent files
-              StreamBuilder(
-                stream: flutterP2P.streamSentFilesInfo(),
-                builder: (context, snapshot) {
-                  var sentFiles = snapshot.data ?? [];
-                  return Center(
-                    child: Column(
-                      children: [
-                        Text(
-                            "Sent files (${sentFiles.isEmpty ? 'empty' : sentFiles.length}):"),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 200,
-                          child: ListView.builder(
-                            itemCount: sentFiles.length,
-                            itemBuilder: (context, index) {
-                              var file = sentFiles[index];
-                              var receiverIds = file.receiverIds;
-
-                              return ListTile(
-                                title: Text(file.info.name),
-                                subtitle: SizedBox(
-                                  width: MediaQuery.of(context).size.width,
-                                  height: 200,
-                                  child: ListView.builder(
-                                    itemCount: receiverIds.length,
-                                    itemBuilder: (context, index) {
-                                      var id = receiverIds[index];
-                                      var percent =
-                                          file.getProgressPercent(id).round();
-                                      return Text("$id = $percent%");
-                                    },
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: const Text("Scan QR"),
+                      onPressed: !isConnected
+                          ? () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ScannerPage(
+                                    onScanned: connectWithCredentials,
                                   ),
                                 ),
                               );
-                            },
+                            }
+                          : null,
+                    ),
+                    if (isConnected)
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.link_off),
+                        label: const Text("Disconnect"),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange),
+                        onPressed: disconnect,
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            if (discoveredDevices.isNotEmpty && !isConnected)
+              _buildSection(
+                "Discovered Hosts",
+                [
+                  SizedBox(
+                    height: 150,
+                    child: ListView.builder(
+                      itemCount: discoveredDevices.length,
+                      itemBuilder: (context, index) => Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          title: Text(discoveredDevices[index].deviceName),
+                          subtitle:
+                              Text(discoveredDevices[index].deviceAddress),
+                          trailing: ElevatedButton(
+                            onPressed: () =>
+                                connectWithDevice(discoveredDevices[index]),
+                            child: const Text("Connect"),
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  );
-                },
+                  ),
+                ],
               ),
-              const SizedBox(height: 30),
-            ],
-          ),
+            _buildSection(
+              "Participants",
+              [
+                StreamBuilder<List<P2pClientInfo>>(
+                  stream: flutterP2P.streamClientList(),
+                  builder: (context, snapshot) {
+                    var clientList = snapshot.data ?? [];
+                    if (clientList.isEmpty) {
+                      return const Text("No other participants yet.");
+                    }
+                    return SizedBox(
+                      height: 100,
+                      child: ListView.builder(
+                        itemCount: clientList.length,
+                        itemBuilder: (context, index) => ListTile(
+                          title: Text(clientList[index].username),
+                          subtitle: Text('Host: ${clientList[index].isHost}'),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            _buildSection(
+              "Send Message",
+              [
+                TextField(
+                  controller: textEditingController,
+                  decoration: const InputDecoration(hintText: 'Enter message'),
+                  enabled: isConnected,
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.send),
+                  label: const Text('Send Text'),
+                  onPressed: isConnected ? sendMessage : null,
+                ),
+              ],
+            ),
+            _buildSection(
+              "Send File",
+              [
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.attach_file),
+                  label: const Text('Select & Send File'),
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  onPressed: isConnected ? sendFile : null,
+                ),
+              ],
+            ),
+            _buildSection(
+              "Received Files",
+              [
+                StreamBuilder<List<ReceivableFileInfo>>(
+                  stream: flutterP2P.streamReceivedFilesInfo(),
+                  builder: (context, snapshot) {
+                    var receivedFiles = snapshot.data ?? [];
+                    if (receivedFiles.isEmpty) {
+                      return const Text("No files received yet.");
+                    }
+                    return SizedBox(
+                      height: 200,
+                      child: ListView.builder(
+                        itemCount: receivedFiles.length,
+                        itemBuilder: (context, index) {
+                          var file = receivedFiles[index];
+                          var percent = file.downloadProgressPercent.round();
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            child: ListTile(
+                              title: Text(file.info.name),
+                              subtitle:
+                                  Text("Status: ${file.state.name}, $percent%"),
+                              trailing: file.state == ReceivableFileState.idle
+                                  ? ElevatedButton(
+                                      onPressed: () async {
+                                        snack(
+                                            "Downloading ${file.info.name}...");
+                                        var downloaded =
+                                            await flutterP2P.downloadFile(
+                                                file.info.id,
+                                                '/storage/emulated/0/Download/');
+                                        snack(
+                                            "${file.info.name} download: $downloaded");
+                                      },
+                                      child: const Text('Download'),
+                                    )
+                                  : (file.state ==
+                                          ReceivableFileState.downloading
+                                      ? const CircularProgressIndicator()
+                                      : (file.state ==
+                                              ReceivableFileState.completed
+                                          ? const Icon(Icons.check_circle,
+                                              color: Colors.green)
+                                          : const Icon(Icons.error,
+                                              color: Colors.red))),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            _buildSection(
+              "Sent Files Status",
+              [
+                StreamBuilder<List<HostedFileInfo>>(
+                  stream: flutterP2P.streamSentFilesInfo(),
+                  builder: (context, snapshot) {
+                    var sentFiles = snapshot.data ?? [];
+                    if (sentFiles.isEmpty) {
+                      return const Text("No files sent yet.");
+                    }
+                    return SizedBox(
+                      height: 200,
+                      child: ListView.builder(
+                        itemCount: sentFiles.length,
+                        itemBuilder: (context, index) {
+                          var file = sentFiles[index];
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            child: ListTile(
+                              title: Text(file.info.name),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: file.receiverIds.map((id) {
+                                  P2pClientInfo? receiverInfo;
+                                  try {
+                                    receiverInfo = flutterP2P.clientList
+                                        .firstWhere((c) => c.id == id);
+                                  } catch (_) {}
+                                  var name = receiverInfo?.username ??
+                                      id.substring(0, min(8, id.length));
+                                  var percent =
+                                      file.getProgressPercent(id).round();
+                                  return Text("$name: $percent%");
+                                }).toList(),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

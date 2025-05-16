@@ -263,6 +263,8 @@ class FlutterP2pHost extends _FlutterP2pConnection {
   /// Returns `true` if the host is currently advertising hotspot credentials via BLE.
   bool get isAdvertising => _isBleAdvertising;
 
+  List<P2pClientInfo> get clientList => _p2pTransport?.clientList ?? [];
+
   /// Initializes the P2P connection host resources on the native platform.
   ///
   /// This method must be called before any other host operations.
@@ -589,6 +591,8 @@ class FlutterP2pClient extends _FlutterP2pConnection {
   /// Returns `true` if the client's P2P transport layer is connected to the host.
   bool get isConnected => _p2pTransport?.isConnected ?? false;
 
+  List<P2pClientInfo> get clientList => _p2pTransport?.clientList ?? [];
+
   /// Initializes the P2P connection client resources on the native platform.
   ///
   /// This method must be called before any other client operations.
@@ -657,6 +661,7 @@ class FlutterP2pClient extends _FlutterP2pConnection {
       if (streamSub != null) {
         try {
           await streamSub?.cancel();
+          onDone?.call();
           debugPrint("Client: Scan stream subscription cancelled.");
         } catch (e) {
           debugPrint("Client: Error cancelling scan stream subscription: $e");
