@@ -378,7 +378,7 @@ class FileDownloadProgressUpdate {
       'FileDownloadProgressUpdate(fileId: $fileId, progress: ${progressPercent.toStringAsFixed(1)}%, path: $savePath)';
 }
 
-mixin FileRequestServerMixin {
+mixin _FileRequestServerMixin {
   Map<String, HostedFileInfo> get hostedFiles;
   String get transportUsername; // For logging prefix
   static const String _logPrefixBase = "P2P FileServer";
@@ -485,7 +485,7 @@ mixin FileRequestServerMixin {
   }
 }
 
-class P2pTransportHost with FileRequestServerMixin {
+class P2pTransportHost with _FileRequestServerMixin {
   final int defaultPort;
   final String username;
   final String hostId = const Uuid().v4();
@@ -998,7 +998,7 @@ class P2pTransportHost with FileRequestServerMixin {
   }
 }
 
-class P2pTransportClient with FileRequestServerMixin {
+class P2pTransportClient with _FileRequestServerMixin {
   final String hostIp;
   final int defaultPort;
   final int defaultFilePort;

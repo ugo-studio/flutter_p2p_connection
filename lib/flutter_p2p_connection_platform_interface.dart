@@ -33,7 +33,7 @@ abstract class FlutterP2pConnectionPlatform extends PlatformInterface {
     throw UnimplementedError('getPlatformModel() has not been implemented.');
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize({ String? serviceUuid }) async {
     throw UnimplementedError('initialize() has not been implemented.');
   }
 

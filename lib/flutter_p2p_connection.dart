@@ -11,6 +11,9 @@ const int _defaultP2pTransportPort = 3456;
 const int _defaultP2pTransportClientFileServerPort = 4567;
 
 class _FlutterP2pConnection {
+  final String? serviceUuid;
+  const _FlutterP2pConnection({this.serviceUuid});
+
   Future<String> getDeviceModel() =>
       FlutterP2pConnectionPlatform.instance.getPlatformModel();
 
@@ -90,16 +93,24 @@ class FlutterP2pHost extends _FlutterP2pConnection {
   bool _isGroupCreated = false;
   bool _isBleAdvertising = false;
   P2pTransportHost? _p2pTransport;
-  HotspotHostState? _lastKnownHotspotState; // To store the latest state
+  HotspotHostState? _lastKnownHotspotState;
+
+  FlutterP2pHost({super.serviceUuid});
 
   bool get isGroupCreated => _isGroupCreated;
   bool get isAdvertising => _isBleAdvertising;
   List<P2pClientInfo> get clientList => _p2pTransport?.clientList ?? [];
+  List<HostedFileInfo> get hostedFileInfos =>
+      _p2pTransport?.hostedFileInfos ?? [];
+  List<ReceivableFileInfo> get receivableFileInfos =>
+      _p2pTransport?.receivableFileInfos ?? [];
 
   Future<void> initialize() async {
     _p2pTransport = null;
     _lastKnownHotspotState = null;
-    await FlutterP2pConnectionPlatform.instance.initialize();
+    await FlutterP2pConnectionPlatform.instance.initialize(
+      serviceUuid: serviceUuid,
+    );
   }
 
   Future<void> dispose() async {
@@ -370,19 +381,29 @@ class FlutterP2pClient extends _FlutterP2pConnection {
   StreamSubscription<List<BleDiscoveredDevice>>? _scanStreamSub;
   Timer? _scanTimer;
 
+  FlutterP2pClient({super.serviceUuid});
+
   bool get isScanning => _isScanning;
   bool get isConnected => _p2pTransport?.isConnected ?? false;
   List<P2pClientInfo> get clientList => _p2pTransport?.clientList ?? [];
+  List<HostedFileInfo> get hostedFileInfos =>
+      _p2pTransport?.hostedFileInfos ?? [];
+  List<ReceivableFileInfo> get receivableFileInfos =>
+      _p2pTransport?.receivableFileInfos ?? [];
 
-  Future<void> initialize({String? clientId}) async {
-    await _p2pTransport?.dispose();
+  Future<void> initialize({String? serviceUuid}) async {
+    try {
+      await _p2pTransport?.dispose();
+    } catch (_) {}
     _p2pTransport = null;
     _lastKnownClientState = null;
     _scanStreamSub?.cancel();
     _scanStreamSub = null;
     _scanTimer?.cancel();
     _scanTimer = null;
-    await FlutterP2pConnectionPlatform.instance.initialize();
+    await FlutterP2pConnectionPlatform.instance.initialize(
+      serviceUuid: serviceUuid,
+    );
   }
 
   Future<void> dispose() async {
@@ -522,14 +543,16 @@ class FlutterP2pClient extends _FlutterP2pConnection {
           }
         },
         onError: (error) {
-          if (!completer.isCompleted)
+          if (!completer.isCompleted) {
             completer.completeError(
                 Exception('Client: Error receiving BLE data: $error'));
+          }
         },
         onDone: () {
-          if (!completer.isCompleted)
+          if (!completer.isCompleted) {
             completer.completeError(Exception(
                 'Client: BLE data stream ended before receiving credentials.'));
+          }
         },
       );
 
@@ -686,13 +709,10 @@ class FlutterP2pClient extends _FlutterP2pConnection {
       throw StateError(
           'Client: P2P transport is not connected. Cannot send data.');
     }
-    final targetClient = transport.clientList.firstWhere(
-        (c) => c.id == clientId,
-        orElse: () => P2pClientInfo(
-            id: "null",
-            username: "null",
-            isHost: false)); // Find the client info
-    if (targetClient.id == "null") {
+    final targetClient = transport.clientList
+        .where((c) => c.id == clientId)
+        .firstOrNull; // Find the client info
+    if (targetClient == null) {
       debugPrint("Client: Target client $clientId not found in client list.");
       return false;
     }

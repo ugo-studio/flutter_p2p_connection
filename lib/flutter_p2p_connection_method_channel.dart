@@ -75,8 +75,10 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   /// Must be called before most other host or client operations.
   /// Returns a [Future] that completes when initialization is done.
   @override
-  Future<void> initialize() async {
-    await methodChannel.invokeMethod('initialize');
+  Future<void> initialize({String? serviceUuid}) async {
+    await methodChannel.invokeMethod('initialize', {
+      'serviceUuid': serviceUuid,
+    });
   }
 
   /// Disposes native P2P and BLE resources and cleans up connections.
@@ -393,7 +395,8 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
         try {
           return event
               .whereType<Map>() // Filter out any non-map elements defensively
-              .map((deviceMap) => BleDiscoveredDevice.fromMap(Map.from(deviceMap)))
+              .map((deviceMap) =>
+                  BleDiscoveredDevice.fromMap(Map.from(deviceMap)))
               .toList();
         } catch (e) {
           debugPrint(

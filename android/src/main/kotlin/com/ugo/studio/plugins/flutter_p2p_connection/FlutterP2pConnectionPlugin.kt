@@ -156,7 +156,11 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
         when (call.method) {
             "getPlatformVersion" -> { result.success("${Build.VERSION.RELEASE}"); return }
             "getPlatformModel" -> { result.success("${Build.MODEL}"); return }
-            "initialize" -> { initialize(result); return }
+            "initialize" -> { 
+                val serviceUuid: String? = call.argument("serviceUuid") // Optional UUID for BLE
+                initialize(result, serviceUuid); 
+                return 
+            }
             // Permission/Service checks might need minimal init
             "checkP2pPermissions", "askP2pPermissions",
             "checkLocationEnabled", "enableLocationServices",
@@ -287,7 +291,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
     // --- Initialization and Disposal ---
 
-    private fun initialize(result: Result) {
+    private fun initialize(result: Result, serviceUuid: String?) {
         if (isInitialized) {
             Log.d(TAG, "Already initialized.")
             result.success(true)
@@ -332,7 +336,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
             clientManager.initialize()
 
             // Initialize BleManager - MUST come after Permissions/Service Manager
-            bleManager = BleManager(applicationContext, bluetoothAdapter, permissionsManager, serviceManager, mainHandler)
+            bleManager = BleManager(applicationContext, bluetoothAdapter, serviceUuid, permissionsManager, serviceManager, mainHandler)
             bleManager.initialize()
 
 

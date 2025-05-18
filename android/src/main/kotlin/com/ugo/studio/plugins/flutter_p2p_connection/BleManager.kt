@@ -23,6 +23,7 @@ import com.ugo.studio.plugins.flutter_p2p_connection.Constants
 class BleManager(
     private val context: Context,
     private val bluetoothAdapter: BluetoothAdapter?, // Can be null if BT not supported
+    private val customServiceUuid: String?, // If null use default service UUID
     private val permissionsManager: PermissionsManager,
     private val serviceManager: ServiceManager,
     private val mainHandler: Handler
@@ -43,7 +44,7 @@ class BleManager(
     private var connectingDeviceAddress: String? = null // To track device for bonding
 
     // UUIDs
-    private val serviceUuid: UUID = Constants.BLE_CREDENTIAL_SERVICE_UUID
+    private val serviceUuid: UUID = if (customServiceUuid != null) UUID.fromString(customServiceUuid) else Constants.BLE_CREDENTIAL_SERVICE_UUID
     private val ssidCharacteristicUuid: UUID = Constants.BLE_SSID_CHARACTERISTIC_UUID
     private val pskCharacteristicUuid: UUID = Constants.BLE_PSK_CHARACTERISTIC_UUID
 
