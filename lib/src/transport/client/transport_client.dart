@@ -260,7 +260,9 @@ class P2pTransportClient with FileRequestServerMixin {
           switch (message.type) {
             case P2pMessageType.clientList:
               _clientList = List<P2pClientInfo>.from(message.clients);
-              // _clientList.removeWhere((client) => client.id == clientId); // Client list from host should already be correct
+              _clientList.removeWhere((client) =>
+                  client.id ==
+                  clientId); // Self is included in client list, remove it
               debugPrint(
                   "$_logPrefix [$username]: Updated client list: ${_clientList.map((c) => c.username).toList()}");
               break;

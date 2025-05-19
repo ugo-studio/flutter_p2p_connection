@@ -460,6 +460,7 @@ class P2pTransportHost with FileRequestServerMixin {
       await fileSink.close();
       fileSink = null; // Mark as closed
       progressUpdateTimer.cancel();
+      receivable.state = ReceivableFileState.completed;
       reportProgress(); // Final report
 
       if (!isRangeRequest) {
@@ -469,7 +470,6 @@ class P2pTransportHost with FileRequestServerMixin {
               "$_logPrefix [$username]: Warning: Final file size (${savedFileStat.size}) != expected ($totalBytes) for $fileId");
         }
       }
-      receivable.state = ReceivableFileState.completed;
       debugPrint(
           "$_logPrefix [$username]: Download complete for $fileId. Saved to $savePath");
       return true;

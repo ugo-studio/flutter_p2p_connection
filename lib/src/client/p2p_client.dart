@@ -71,14 +71,14 @@ class FlutterP2pClient extends FlutterP2pConnectionBase {
   /// This method should be called when the client functionality is no longer needed
   /// to release system resources.
   Future<void> dispose() async {
-    await stopScan().catchError(
-        (e) => debugPrint("Client: Error stopping scan in dispose: $e"));
-    await disconnect().catchError(
-        (e) => debugPrint("Client: Error disconnecting in dispose: $e"));
     await _p2pTransport?.dispose().catchError(
         (e) => debugPrint("Client: Error disposing transport in dispose: $e"));
     _p2pTransport = null;
     _lastKnownClientState = null;
+    await stopScan().catchError(
+        (e) => debugPrint("Client: Error stopping scan in dispose: $e"));
+    await disconnect().catchError(
+        (e) => debugPrint("Client: Error disconnecting in dispose: $e"));
     await FlutterP2pConnectionPlatform.instance.dispose();
     debugPrint("FlutterP2pClient disposed.");
   }
