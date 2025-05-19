@@ -1209,6 +1209,11 @@ class P2pTransportClient with _FileRequestServerMixin {
 
   static const String _logPrefix = "P2P Transport Client";
 
+  // Fields for retry mechanism
+  int _connectionRetryAttempts = 0;
+  static const int _maxConnectionRetries = 3;
+  bool _isManuallyDisconnecting = false;
+
   @override
   Map<String, HostedFileInfo> get hostedFiles => _hostedFiles;
   @override
@@ -1321,6 +1326,28 @@ class P2pTransportClient with _FileRequestServerMixin {
     }
   }
 
+  Future<void> _cleanupConnectionState({required bool stopFileServer}) async {
+    _isConnected = false;
+
+    await _socketSubscription?.cancel();
+    _socketSubscription = null;
+
+    try {
+      await _socket?.close();
+    } catch (e) {
+      debugPrint(
+          "$_logPrefix [$username]: Error closing socket (ignoring): $e");
+    }
+    _socket = null;
+
+    _clientList = [];
+
+    if (stopFileServer) {
+      await _stopFileServer();
+    }
+    // No explicit debugPrint here, caller will log context.
+  }
+
   /// Connects to the P2P host server.
   ///
   /// This will first attempt to start the local file server, then establish
@@ -1328,6 +1355,8 @@ class P2pTransportClient with _FileRequestServerMixin {
   /// Throws an exception if connection fails.
   Future<void> connect() async {
     if (isConnected || _isConnecting) return;
+    _isManuallyDisconnecting =
+        false; // Reset flag for new connection attempt sequence
     _isConnecting = true;
 
     bool fileServerStarted = await _startFileServer();
@@ -1347,7 +1376,7 @@ class P2pTransportClient with _FileRequestServerMixin {
         debugPrint(
             "$_logPrefix [$username]: Attempting WebSocket connect to $url...");
         tempSocket = await WebSocket.connect(url.toString())
-            .timeout(const Duration(seconds: 10)); // Increased timeout
+            .timeout(const Duration(seconds: 10));
         debugPrint("$_logPrefix [$username]: WebSocket connected to $url");
       } on TimeoutException {
         debugPrint(
@@ -1366,16 +1395,19 @@ class P2pTransportClient with _FileRequestServerMixin {
         attempts++;
       }
     }
-    _isConnecting = false;
 
     if (tempSocket == null) {
-      await _stopFileServer();
+      _isConnecting = false;
+      // File server remains running as per original logic of not stopping on initial connect failure
       throw Exception(
           "$_logPrefix [$username]: Could not connect to WebSocket server at $hostIp on any port in range $defaultPort-${port - 1}.");
     }
 
     _socket = tempSocket;
     _isConnected = true;
+    _connectionRetryAttempts = 0; // Reset retries on successful new connection
+    _isConnecting = false; // Mark connection phase as complete
+
     await _socketSubscription?.cancel();
     _socketSubscription = _socket!.listen(
       (data) async {
@@ -1387,8 +1419,8 @@ class P2pTransportClient with _FileRequestServerMixin {
           switch (message.type) {
             case P2pMessageType.clientList:
               _clientList = List<P2pClientInfo>.from(message.clients);
-              _clientList.removeWhere((client) =>
-                  client.id == clientId); // Host sends full list, remove self
+              _clientList.removeWhere(
+                  (client) => client.id == clientId); // remove self
               debugPrint(
                   "$_logPrefix [$username]: Updated client list: ${_clientList.map((c) => c.username).toList()}");
               break;
@@ -1396,7 +1428,7 @@ class P2pTransportClient with _FileRequestServerMixin {
               if (message.payload is P2pMessagePayload) {
                 final payload = message.payload as P2pMessagePayload;
                 debugPrint(
-                    "$_logPrefix [$username]: Received payload from ${senderInfo?.username} (${senderInfo?.id})");
+                    "$_logPrefix [$username]: Received payload from ${senderInfo?.username ?? 'Unknown'} (${senderInfo?.id ?? message.senderId})");
                 if (payload.files.isNotEmpty) {
                   for (var fileInfo in payload.files) {
                     if (_receivableFiles.containsKey(fileInfo.id)) {
@@ -1407,7 +1439,7 @@ class P2pTransportClient with _FileRequestServerMixin {
                     _receivableFiles[fileInfo.id] =
                         ReceivableFileInfo(info: fileInfo);
                     debugPrint(
-                        "$_logPrefix [$username]: Added receivable file: ${fileInfo.name} (ID: ${fileInfo.id}) from ${senderInfo?.username}");
+                        "$_logPrefix [$username]: Added receivable file: ${fileInfo.name} (ID: ${fileInfo.id}) from ${senderInfo?.username ?? 'Unknown'}");
                   }
                 }
                 if (payload.text.isNotEmpty &&
@@ -1430,7 +1462,7 @@ class P2pTransportClient with _FileRequestServerMixin {
               break;
             case P2pMessageType.unknown:
               debugPrint(
-                  "$_logPrefix [$username]: Received unknown message type from ${senderInfo?.username}");
+                  "$_logPrefix [$username]: Received unknown message type from ${senderInfo?.username ?? 'Unknown'}");
               break;
           }
         } catch (e, s) {
@@ -1438,30 +1470,88 @@ class P2pTransportClient with _FileRequestServerMixin {
               "$_logPrefix [$username]: Error parsing server message: $e\nStack: $s\nData: $data");
         }
       },
-      onDone: () {
-        debugPrint(
-            "$_logPrefix [$username]: WebSocket disconnected from server.");
-        _handleDisconnect();
+      onDone: () async {
+        debugPrint("$_logPrefix [$username]: WebSocket disconnected (onDone).");
+        if (_isManuallyDisconnecting) {
+          await _cleanupConnectionState(
+              stopFileServer: true); // Manual disconnect stops server
+          // _isManuallyDisconnecting is reset by connect() or fully by disconnect() itself
+          return;
+        }
+
+        bool wasConnected = _isConnected;
+        await _cleanupConnectionState(
+            stopFileServer: false); // Keep server for retry
+
+        if (wasConnected && _connectionRetryAttempts < _maxConnectionRetries) {
+          _connectionRetryAttempts++;
+          debugPrint(
+              "$_logPrefix [$username]: Attempting to reconnect (attempt $_connectionRetryAttempts/$_maxConnectionRetries)...");
+          await Future.delayed(Duration(seconds: 1 + _connectionRetryAttempts));
+          try {
+            await connect();
+          } catch (e) {
+            debugPrint(
+                "$_logPrefix [$username]: Reconnect attempt $_connectionRetryAttempts failed: $e");
+            if (_connectionRetryAttempts >= _maxConnectionRetries) {
+              debugPrint(
+                  "$_logPrefix [$username]: Max reconnection attempts reached. Giving up. Stopping file server.");
+              await _stopFileServer();
+            }
+          }
+        } else {
+          if (wasConnected) {
+            debugPrint(
+                "$_logPrefix [$username]: WebSocket disconnected. Max retries reached or was not supposed to retry. Stopping file server.");
+            await _stopFileServer();
+          } else if (_connectionRetryAttempts >= _maxConnectionRetries) {
+            debugPrint(
+                "$_logPrefix [$username]: Max reconnection attempts previously reached. Ensuring file server is stopped if it was started.");
+            if (_fileServer != null) await _stopFileServer();
+          }
+        }
       },
-      onError: (error) {
+      onError: (error) async {
         debugPrint("$_logPrefix [$username]: WebSocket error: $error");
-        _handleDisconnect();
+        if (_isManuallyDisconnecting) {
+          await _cleanupConnectionState(stopFileServer: true);
+          return;
+        }
+        bool wasConnected = _isConnected;
+        await _cleanupConnectionState(stopFileServer: false);
+
+        if (wasConnected && _connectionRetryAttempts < _maxConnectionRetries) {
+          _connectionRetryAttempts++;
+          debugPrint(
+              "$_logPrefix [$username]: Attempting to reconnect due to error (attempt $_connectionRetryAttempts/$_maxConnectionRetries)...");
+          await Future.delayed(Duration(seconds: 1 + _connectionRetryAttempts));
+          try {
+            await connect();
+          } catch (e) {
+            debugPrint(
+                "$_logPrefix [$username]: Reconnect attempt $_connectionRetryAttempts (due to error) failed: $e");
+            if (_connectionRetryAttempts >= _maxConnectionRetries) {
+              debugPrint(
+                  "$_logPrefix [$username]: Max reconnection attempts reached after error. Giving up. Stopping file server.");
+              await _stopFileServer();
+            }
+          }
+        } else {
+          if (wasConnected) {
+            debugPrint(
+                "$_logPrefix [$username]: WebSocket error. Max retries reached or not supposed to retry. Stopping file server.");
+            await _stopFileServer();
+          } else if (_connectionRetryAttempts >= _maxConnectionRetries) {
+            debugPrint(
+                "$_logPrefix [$username]: Max reconnection attempts previously reached after error. Ensuring file server is stopped.");
+            if (_fileServer != null) await _stopFileServer();
+          }
+        }
       },
       cancelOnError: true,
     );
     debugPrint(
         '$_logPrefix [$username]: Connection established and listener set up.');
-  }
-
-  Future<void> _handleDisconnect() async {
-    _isConnected = false;
-    _socket = null;
-    await _socketSubscription?.cancel();
-    _socketSubscription = null;
-    _clientList = [];
-    await _stopFileServer();
-    // _receivableFiles.clear(); // Optional: clear pending/received files on disconnect
-    debugPrint("$_logPrefix [$username]: Cleaned up after disconnect.");
   }
 
   void _handleFileProgressUpdate(P2pFileProgressUpdate progressUpdate) {
@@ -1517,15 +1607,13 @@ class P2pTransportClient with _FileRequestServerMixin {
       name: fileName,
       size: fileStat.size,
       senderId: clientId,
-      senderHostIp: actualSenderIp, // Use provided client's IP in group
+      senderHostIp: actualSenderIp,
       senderPort: _fileServerPortInUse!,
       metadata: {'shared_at': DateTime.now().toIso8601String()},
     );
 
-    final List<P2pClientInfo> targetClients = recipients ??
-        _clientList
-            .where((c) => c.id != clientId)
-            .toList(); // Send to all *others* by default
+    final List<P2pClientInfo> targetClients =
+        recipients ?? _clientList.where((c) => c.id != clientId).toList();
     final recipientIds = targetClients.map((c) => c.id).toList();
 
     _hostedFiles[fileId] = HostedFileInfo(
@@ -1647,7 +1735,6 @@ class P2pTransportClient with _FileRequestServerMixin {
               totalSize: totalBytes,
               savePath: savePath));
           if (bytesReceived > lastReportedBytes) {
-            // Send progress less frequently or based on significant change
             if ((percent.toInt() % 5 == 0 &&
                     percent.toInt() >
                         (lastReportedBytes / totalBytes * 100).toInt()) ||
@@ -1666,10 +1753,6 @@ class P2pTransportClient with _FileRequestServerMixin {
       await for (var chunk in response.stream) {
         fileSink.add(chunk);
         bytesReceived += chunk.length;
-        // Reporting progress inside the loop can be very frequent.
-        // Consider moving it to the timer or only reporting on larger byte changes.
-        // For now, keeping it, but the timer also calls it.
-        // reportProgress();
       }
 
       await fileSink.flush();
@@ -1713,7 +1796,6 @@ class P2pTransportClient with _FileRequestServerMixin {
     if (!isConnected) return;
     final progressPayload = P2pFileProgressUpdate(
         fileId: fileId, receiverId: clientId, bytesDownloaded: bytesDownloaded);
-    // Target only the original sender
     final P2pClientInfo? targetSender =
         _clientList.where((c) => c.id == originalSenderId).firstOrNull;
     if (targetSender == null) return;
@@ -1740,8 +1822,10 @@ class P2pTransportClient with _FileRequestServerMixin {
         }
         return true;
       } catch (e) {
-        debugPrint("$_logPrefix [$username]: Error sending message: $e");
-        await _handleDisconnect();
+        debugPrint(
+            "$_logPrefix [$username]: Error sending message: $e. Connection may be compromised.");
+        // Mark as not connected. The socket's onDone/onError should handle actual cleanup and retries.
+        _isConnected = false;
         return false;
       }
     } else {
@@ -1753,12 +1837,15 @@ class P2pTransportClient with _FileRequestServerMixin {
 
   /// Disconnects from the P2P host server and stops the local file server.
   Future<void> disconnect() async {
-    debugPrint("$_logPrefix [$username]: Disconnecting...");
-    await _socketSubscription?.cancel();
-    _socketSubscription = null;
-    await _socket?.close().catchError((_) {});
-    await _handleDisconnect();
-    debugPrint("$_logPrefix [$username]: Disconnected.");
+    debugPrint("$_logPrefix [$username]: Disconnecting manually...");
+    _isManuallyDisconnecting = true;
+
+    await _cleanupConnectionState(stopFileServer: true);
+    _connectionRetryAttempts =
+        _maxConnectionRetries; // Ensure no further retries from any lingering async operations
+
+    debugPrint("$_logPrefix [$username]: Manually disconnected.");
+    // _isManuallyDisconnecting is reset by connect() if/when it's called next.
   }
 
   /// Cleans up resources used by the client.
