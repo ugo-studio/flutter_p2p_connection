@@ -12,6 +12,9 @@ import '../../flutter_p2p_connection_platform_interface.dart';
 ///   (Location, Wi-Fi, Bluetooth) required for P2P operations.
 /// - Device information like the model.
 class FlutterP2pConnectionBase {
+  /// Optional custom user name for device.
+  final String? username;
+
   /// Optional custom UUID for the BLE service. If null, a default UUID is used.
   final String? serviceUuid;
 
@@ -26,6 +29,7 @@ class FlutterP2pConnectionBase {
     this.serviceUuid,
     this.bondingRequired,
     this.encryptionRequired,
+    this.username,
   });
 
   /// Retrieves the model identifier of the current device.

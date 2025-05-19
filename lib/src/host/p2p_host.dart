@@ -30,10 +30,12 @@ class FlutterP2pHost extends FlutterP2pConnectionBase {
   ///               If null, a default UUID is used.
   /// [bondingRequired] optional bonding by BLE service.
   /// [encryptionRequired] optional encryption by BLE service.
+  /// [username] is an optional custom user name for device.
   FlutterP2pHost({
     super.serviceUuid,
     super.bondingRequired,
     super.encryptionRequired,
+    super.username,
   });
 
   /// Returns `true` if a Wi-Fi Direct group has been successfully created.
@@ -156,7 +158,8 @@ class FlutterP2pHost extends FlutterP2pConnectionBase {
 
     _p2pTransport = P2pTransportHost(
       defaultPort: defaultP2pTransportPort,
-      username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
+      username: username ??
+          await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
     );
     try {
       await _p2pTransport!.start();

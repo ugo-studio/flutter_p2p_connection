@@ -33,10 +33,12 @@ class FlutterP2pClient extends FlutterP2pConnectionBase {
   ///               If null, a default UUID is used.
   /// [bondingRequired] optional bonding by BLE service.
   /// [encryptionRequired] optional encryption by BLE service.
+  /// [username] is an optional custom user name for the device.
   FlutterP2pClient({
     super.serviceUuid,
     super.bondingRequired,
     super.encryptionRequired,
+    super.username,
   });
 
   /// Returns `true` if the client is currently scanning for BLE devices.
@@ -345,7 +347,8 @@ class FlutterP2pClient extends FlutterP2pConnectionBase {
       hostIp: state.hostGatewayIpAddress!,
       defaultPort: defaultP2pTransportPort,
       defaultFilePort: defaultP2pTransportClientFileServerPort,
-      username: await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
+      username: username ??
+          await FlutterP2pConnectionPlatform.instance.getPlatformModel(),
     );
     try {
       await _p2pTransport!.connect();
