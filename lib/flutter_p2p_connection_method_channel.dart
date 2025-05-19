@@ -75,9 +75,15 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   /// Must be called before most other host or client operations.
   /// Returns a [Future] that completes when initialization is done.
   @override
-  Future<void> initialize({String? serviceUuid}) async {
+  Future<void> initialize({
+    String? serviceUuid,
+    bool? bondingRequired,
+    bool? encryptionRequired,
+  }) async {
     await methodChannel.invokeMethod('initialize', {
       'serviceUuid': serviceUuid,
+      'bondingRequired': bondingRequired,
+      'encryptionRequired': encryptionRequired,
     });
   }
 

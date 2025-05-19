@@ -23,12 +23,15 @@ import com.ugo.studio.plugins.flutter_p2p_connection.Constants
 class BleManager(
     private val context: Context,
     private val bluetoothAdapter: BluetoothAdapter?, // Can be null if BT not supported
-    private val customServiceUuid: String?, // If null use default service UUID
     private val permissionsManager: PermissionsManager,
     private val serviceManager: ServiceManager,
     private val mainHandler: Handler
 ) {
     private val TAG = Constants.TAG + "_Ble"
+
+    // Configuration properties
+    private var bondingRequired: Boolean = false
+    private var encryptionRequired: Boolean = false
 
     // BLE Components
     private var bluetoothLeAdvertiser: BluetoothLeAdvertiser? = null
@@ -44,7 +47,7 @@ class BleManager(
     private var connectingDeviceAddress: String? = null // To track device for bonding
 
     // UUIDs
-    private val serviceUuid: UUID = if (customServiceUuid != null) UUID.fromString(customServiceUuid) else Constants.BLE_CREDENTIAL_SERVICE_UUID
+    private var serviceUuid: UUID = Constants.BLE_CREDENTIAL_SERVICE_UUID
     private val ssidCharacteristicUuid: UUID = Constants.BLE_SSID_CHARACTERISTIC_UUID
     private val pskCharacteristicUuid: UUID = Constants.BLE_PSK_CHARACTERISTIC_UUID
 
@@ -67,31 +70,17 @@ class BleManager(
                     when (bondState) {
                         BluetoothDevice.BOND_BONDED -> {
                             Log.i(TAG, "Device ${device?.address} bonded. Discovering services.")
-                            // Ensure clientGatt is still valid and connected to this device
                             if (clientGatt != null && clientGatt?.device?.address == device?.address) {
-                                mainHandler.post { // Ensure GATT operations on main thread if required by stack, or on GATT callback thread
-                                   if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
-                                       if (clientGatt?.discoverServices() == false) {
-                                           Log.e(TAG,"GATT Client: Failed to initiate service discovery post-bonding for ${device?.address}")
-                                           clientGatt?.disconnect()
-                                       }
-                                   } else {
-                                        Log.e(TAG, "Missing BLUETOOTH_CONNECT to discover services post-bonding. Disconnecting.")
-                                        clientGatt?.disconnect()
-                                   }
+                                mainHandler.post {
+                                   discoverServices(clientGatt!!) // Ensure clientGatt is not null here
                                 }
                             } else {
-                                Log.w(TAG, "clientGatt is null or for a different device. Cannot discover services for ${device?.address}")
+                                Log.w(TAG, "clientGatt is null or for a different device after bonding. Cannot discover services for ${device?.address}")
                             }
-                            // Unregister here as bonding for this attempt is complete (success)
-                            // unregisterBondStateReceiver() // Or manage unregistration more globally if needed
                         }
                         BluetoothDevice.BOND_NONE -> {
                             Log.w(TAG, "Device ${device?.address} bonding failed or removed.")
-                            // Handle bonding failure, perhaps disconnect
                             clientGatt?.disconnect()
-                            // Unregister here as bonding for this attempt is complete (failure)
-                            // unregisterBondStateReceiver()
                         }
                         BluetoothDevice.BOND_BONDING -> {
                             Log.d(TAG, "Device ${device?.address} is bonding...")
@@ -136,11 +125,16 @@ class BleManager(
 
     // --- Initialization and Cleanup ---
 
-    fun initialize() {
+    fun initialize(serviceUuid: String? = null, bondingRequired: Boolean? = null, encryptionRequired: Boolean? = null) {
+        // Update configuration if new values are provided
+        serviceUuid?.let { this.serviceUuid = UUID.fromString(it) }
+        bondingRequired?.let { this.bondingRequired = it }
+        encryptionRequired?.let { this.encryptionRequired = it }
+
         if (bluetoothAdapter?.isEnabled == true) {
             bluetoothLeAdvertiser = bluetoothAdapter.bluetoothLeAdvertiser
             bluetoothLeScanner = bluetoothAdapter.bluetoothLeScanner
-            Log.d(TAG, "BLE components initialized. Advertiser: $bluetoothLeAdvertiser, Scanner: $bluetoothLeScanner")
+            Log.d(TAG, "BLE components initialized. Advertiser: $bluetoothLeAdvertiser, Scanner: $bluetoothLeScanner. BondingRequired: ${this.bondingRequired}, EncryptionRequired: ${this.encryptionRequired}")
         } else {
             Log.w(TAG, "Bluetooth adapter not enabled or not available, BLE components not initialized.")
         }
@@ -151,8 +145,8 @@ class BleManager(
         stopBleAdvertising(null)
         stopBleScan(null)
         closeGattServer()
-        disconnectAllClients() // This will also handle unregistering bond receiver if clientGatt is active
-        unregisterBondStateReceiver() // Ensure it's unregistered if no active clientGatt
+        disconnectAllClients()
+        unregisterBondStateReceiver()
         connectingDeviceAddress = null
         scanResultSink = null
         connectionStateSink = null
@@ -361,10 +355,10 @@ class BleManager(
             return
         }
 
-        clientGatt?.close() // Close any existing client connection
+        clientGatt?.close()
         clientGatt = null
-        connectingDeviceAddress = deviceAddress // Set before connecting
-        registerBondStateReceiver() // Register to listen for bond changes for this device
+        connectingDeviceAddress = deviceAddress
+        registerBondStateReceiver()
 
         stopBleScan(null)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -374,8 +368,8 @@ class BleManager(
         }
         if(clientGatt == null){
             Log.e(TAG, "connectGatt returned null for $deviceAddress")
-            connectingDeviceAddress = null // Clear if connection init failed
-            unregisterBondStateReceiver() // Unregister if connection init failed
+            connectingDeviceAddress = null
+            unregisterBondStateReceiver()
             result.error("CONNECTION_FAILED", "Failed to initiate GATT connection.", null)
         } else {
             Log.d(TAG, "GATT connection initiated to $deviceAddress...")
@@ -391,7 +385,7 @@ class BleManager(
         }
         if (clientGatt == null || clientGatt?.device?.address != deviceAddress) {
             Log.w(TAG, "Not connected to device $deviceAddress or clientGatt is null.")
-            if (connectingDeviceAddress == deviceAddress) { // If we were trying to connect to this
+            if (connectingDeviceAddress == deviceAddress) {
                 connectingDeviceAddress = null
                 unregisterBondStateReceiver()
             }
@@ -399,12 +393,8 @@ class BleManager(
             return
         }
 
-        clientGatt?.disconnect() // Disconnection and close handled in gattClientCallback
-        // connectingDeviceAddress will be cleared and receiver unregistered in callback or if it was this device
+        clientGatt?.disconnect()
         if (connectingDeviceAddress == deviceAddress) {
-             // It will be cleared in callback, but for safety if callback is missed for some reason for this specific call
-             // connectingDeviceAddress = null;
-             // unregisterBondStateReceiver(); // this is handled in gattClientCallback's disconnect path
         }
         Log.d(TAG, "GATT disconnect requested for $deviceAddress")
         result.success(true)
@@ -439,16 +429,25 @@ class BleManager(
         }
 
         val service = BluetoothGattService(serviceUuid, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+
+        val readPermission = if (this.encryptionRequired) {
+            Log.d(TAG, "Setting characteristics with PERMISSION_READ_ENCRYPTED")
+            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED
+        } else {
+            Log.d(TAG, "Setting characteristics with PERMISSION_READ")
+            BluetoothGattCharacteristic.PERMISSION_READ
+        }
+
         val ssidCharacteristic = BluetoothGattCharacteristic(
             ssidCharacteristicUuid,
             BluetoothGattCharacteristic.PROPERTY_READ,
-            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED
+            readPermission
         )
         ssidCharacteristic.value = ssid.toByteArray(Charsets.UTF_8)
         val pskCharacteristic = BluetoothGattCharacteristic(
             pskCharacteristicUuid,
             BluetoothGattCharacteristic.PROPERTY_READ,
-            BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED
+            readPermission
         )
         pskCharacteristic.value = psk.toByteArray(Charsets.UTF_8)
 
@@ -495,10 +494,7 @@ class BleManager(
         connectedDevices.clear()
 
         if(clientGatt != null) {
-            clientGatt?.disconnect() // Actual close in callback
-            // clientGatt = null; // Nullified in callback
-            // connectingDeviceAddress = null; // Nullified in callback
-            // unregisterBondStateReceiver(); // Unregistered in callback
+            clientGatt?.disconnect()
         }
     }
 
@@ -580,23 +576,18 @@ class BleManager(
             super.onScanResult(callbackType, result)
             result?.device?.let { device ->
                 val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                if (canAccessName) {
-                    val deviceAddress = device.address
-                    val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
+                // Do not try to access device.name if permission is missing to avoid SecurityException
+                val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
+                val deviceAddress = device.address
 
-                    val resultMap = mapOf(
-                        "deviceAddress" to deviceAddress,
-                        "deviceName" to deviceName,
-                    )
-                    val updated = discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap
-                    if (updated) {
-                        Log.d(TAG,"BLE Device Found/Updated: $deviceAddress ($deviceName) RSSI: ${result.rssi}")
-                        sendScanResultListUpdate()
-                    } else {
-                        // 'if' must have both main and 'else' branches if used as an expression
-                    }
-                } else {
-                    Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to get name for scan result on Android 12+")
+                val resultMap = mapOf(
+                    "deviceAddress" to deviceAddress,
+                    "deviceName" to deviceName,
+                )
+                val updated = discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap
+                if (updated) {
+                    Log.d(TAG,"BLE Device Found/Updated: $deviceAddress ($deviceName) RSSI: ${result.rssi}")
+                    sendScanResultListUpdate()
                 }
             }
         }
@@ -607,20 +598,16 @@ class BleManager(
              results?.forEach { result ->
                  result.device?.let { device ->
                     val canAccessName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
-                    if (canAccessName) {
-                        val deviceAddress = device.address
-                        val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
+                    val deviceName = if (canAccessName) device.name ?: "Unknown" else "Protected"
+                    val deviceAddress = device.address
 
-                        val resultMap = mapOf(
-                        "deviceAddress" to deviceAddress,
-                        "deviceName" to deviceName,
-                        )
-                        if (discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap) {
-                            listChanged = true
-                            Log.d(TAG,"BLE Device Found/Updated (Batch): $deviceAddress ($deviceName) RSSI: ${result.rssi}")
-                        }
-                    } else {
-                        Log.w(TAG, "Missing BLUETOOTH_CONNECT permission to get name for batch scan result on Android 12+")
+                    val resultMap = mapOf(
+                    "deviceAddress" to deviceAddress,
+                    "deviceName" to deviceName,
+                    )
+                    if (discoveredDevicesMap.put(deviceAddress, resultMap) != resultMap) {
+                        listChanged = true
+                        Log.d(TAG,"BLE Device Found/Updated (Batch): $deviceAddress ($deviceName) RSSI: ${result.rssi}")
                     }
                 }
             }
@@ -659,9 +646,9 @@ class BleManager(
                         Log.i(TAG, "GATT Server: Device Connected - $deviceName ($deviceAddress)")
                         connectedDevices[deviceAddress] = device
                         sendConnectionStateUpdate(device, true)
-                        // Server requests bond if device is not bonded
-                        if(device.bondState == BluetoothDevice.BOND_NONE) {
-                            Log.d(TAG, "GATT Server: Requesting bond with $deviceAddress. Current bond state: ${bondStateToString(device.bondState)}")
+
+                        if (this@BleManager.bondingRequired && device.bondState == BluetoothDevice.BOND_NONE) {
+                            Log.d(TAG, "GATT Server: Bonding required. Requesting bond with $deviceAddress. Current bond state: ${bondStateToString(device.bondState)}")
                             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                                 if (device.createBond()) {
                                     Log.d(TAG, "GATT Server: createBond initiated for $deviceAddress")
@@ -671,6 +658,8 @@ class BleManager(
                             } else {
                                 Log.e(TAG, "Missing BLUETOOTH_CONNECT permission to create bond on server side.")
                             }
+                        } else if (device.bondState == BluetoothDevice.BOND_NONE) {
+                             Log.d(TAG, "GATT Server: Device $deviceAddress is not bonded, but bonding is not required by server config. Current bond state: ${bondStateToString(device.bondState)}")
                         } else {
                              Log.d(TAG, "GATT Server: Device $deviceAddress already bonded or bonding. State: ${bondStateToString(device.bondState)}")
                         }
@@ -682,7 +671,7 @@ class BleManager(
                     }
                 }
             } else {
-                Log.e(TAG,"GATT Server: Connection state change error for $deviceName ($deviceAddress). Status: $status, NewState: $newState")
+                Log.e(TAG,"GATT Server: Connection state error for $deviceName ($deviceAddress). Status: $status, NewState: $newState")
                 connectedDevices.remove(deviceAddress)
                 sendConnectionStateUpdate(device, false)
             }
@@ -696,21 +685,29 @@ class BleManager(
             }
             val deviceAddress = device.address
             val charUuid = characteristic.uuid
-            val currentBondStateOnServer = device.bondState // Get current bond state
+            val currentBondStateOnServer = device.bondState
             Log.d(TAG, "GATT Server: Read request for Characteristic $charUuid from $deviceAddress (Offset: $offset, BondState: ${bondStateToString(currentBondStateOnServer)})")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                 Log.e(TAG, "Missing BLUETOOTH_CONNECT permission for GATT server read response.")
-                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION, offset, null)
+                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null) // Using GATT_FAILURE as specific auth perm is for system
                 return
             }
 
             if (charUuid == ssidCharacteristicUuid || charUuid == pskCharacteristicUuid) {
-                if (currentBondStateOnServer != BluetoothDevice.BOND_BONDED) {
-                    Log.w(TAG, "GATT Server: Denying read for $charUuid from $deviceAddress due to insufficient auth. BondState: ${bondStateToString(currentBondStateOnServer)}, Client probably expected BONDED.")
-                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION, offset, null)
-                    return
+                val charRequiresEncryption = (characteristic.permissions and BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED) != 0
+
+                if (charRequiresEncryption) {
+                    if (currentBondStateOnServer != BluetoothDevice.BOND_BONDED) {
+                        Log.w(TAG, "GATT Server: Denying read for $charUuid (requires encryption) from $deviceAddress. Device not bonded. BondState: ${bondStateToString(currentBondStateOnServer)}")
+                        gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION, offset, null)
+                        return
+                    }
+                    Log.d(TAG, "GATT Server: Allowing read for $charUuid (requires encryption, device bonded) from $deviceAddress.")
+                } else {
+                    Log.d(TAG, "GATT Server: Allowing read for $charUuid (no encryption required by char) from $deviceAddress. BondState: ${bondStateToString(currentBondStateOnServer)}")
                 }
+
                 val value = characteristic.value
                 val responseValue = if (value != null && offset < value.size) {
                     value.copyOfRange(offset, value.size)
@@ -746,6 +743,18 @@ class BleManager(
         }
     }
 
+    private fun discoverServices(gatt: BluetoothGatt) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+            Log.d(TAG, "GATT Client: Attempting to discover services for ${gatt.device.address}")
+            if (!gatt.discoverServices()) {
+                Log.e(TAG,"GATT Client: Failed to initiate service discovery for ${gatt.device.address}")
+                gatt.disconnect()
+            }
+        } else {
+            Log.e(TAG, "Missing BLUETOOTH_CONNECT to discover services for ${gatt.device.address}. Disconnecting.")
+            gatt.disconnect()
+        }
+    }
 
     private val gattClientCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
@@ -758,34 +767,23 @@ class BleManager(
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 when (newState) {
                     BluetoothProfile.STATE_CONNECTED -> {
-                        Log.i(TAG, "GATT Client: Connected to $deviceName ($deviceAddress). Current bond state: ${bondStateToString(device.bondState)}")
+                        Log.i(TAG, "GATT Client: Connected to $deviceName ($deviceAddress). Current bond state: ${bondStateToString(device.bondState)}. BondingRequired Config: ${this@BleManager.bondingRequired}")
                         clientGatt = gatt
                         sendConnectionStateUpdate(device, true)
 
-                        if (device.bondState == BluetoothDevice.BOND_BONDED) {
-                            Log.d(TAG, "GATT Client: Device already bonded. Discovering services for $deviceAddress...")
-                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
-                                if (!gatt.discoverServices()) {
-                                    Log.e(TAG,"GATT Client: Failed to initiate service discovery for $deviceAddress")
-                                    gatt.disconnect()
-                                }
+                        if (this@BleManager.bondingRequired) {
+                            if (device.bondState == BluetoothDevice.BOND_BONDED) {
+                                Log.d(TAG, "GATT Client: Bonding required and device already bonded. Discovering services for $deviceAddress...")
+                                discoverServices(gatt)
                             } else {
-                                Log.e(TAG, "Missing BLUETOOTH_CONNECT to discover services. Disconnecting.")
-                                gatt.disconnect()
+                                Log.i(TAG, "GATT Client: Bonding required. Device not bonded ($deviceAddress). Waiting for bonding process. Bond state: ${bondStateToString(device.bondState)}")
+                                if (device.bondState == BluetoothDevice.BOND_NONE) {
+                                     Log.d(TAG, "GATT Client: Device is BOND_NONE. Server (if configured for bonding) should initiate. Client registered bondStateReceiver.")
+                                }
                             }
                         } else {
-                            // Server will initiate bond if device.bondState == BluetoothDevice.BOND_NONE.
-                            // Client (this code) should have already registered bondStateReceiver.
-                            // Service discovery will be triggered by the bondStateReceiver when BOND_BONDED.
-                            Log.i(TAG, "GATT Client: Device not bonded ($deviceAddress). Waiting for bonding process to complete. Bond state: ${bondStateToString(device.bondState)}")
-                            if (device.bondState == BluetoothDevice.BOND_NONE) {
-                                // Optionally, client can also initiate bonding if server doesn't.
-                                // However, in this setup, the server is expected to initiate.
-                                // Log.d(TAG, "GATT Client: Device is BOND_NONE. Server should initiate. Client can also try: device.createBond()")
-                                // if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
-                                //    device.createBond()
-                                // }
-                            }
+                            Log.d(TAG, "GATT Client: Bonding not required by config. Discovering services for $deviceAddress... Bond state: ${bondStateToString(device.bondState)}")
+                            discoverServices(gatt)
                         }
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
@@ -821,18 +819,11 @@ class BleManager(
             Log.d(TAG, "GATT Client: Services discovered for $deviceAddress with status: $status. Bond state: ${bondStateToString(device.bondState)}")
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                // Unregister receiver here as successful discovery (implies bonding succeeded earlier)
-                if (device.address == connectingDeviceAddress) {
-                    // unregisterBondStateReceiver() // Keep it registered until disconnection for subsequent bond changes if any, or unregister earlier.
-                    // For this specific flow, if services are discovered, bonding was successful.
-                    // Let's unregister it when the "connectingDeviceAddress" is cleared on disconnect.
-                }
-
                 Log.d(TAG, "Listing all discovered services for $deviceAddress:")
                 gatt.services?.forEachIndexed { index, service ->
                     Log.d(TAG, "  Service [${index}]: ${service.uuid}")
                     service.characteristics?.forEachIndexed { charIndex, characteristic ->
-                        Log.d(TAG, "    Characteristic [${charIndex}]: ${characteristic.uuid}")
+                        Log.d(TAG, "    Characteristic [${charIndex}]: ${characteristic.uuid}, Permissions: ${characteristic.permissions}")
                     }
                 }
 
@@ -848,7 +839,7 @@ class BleManager(
                 val pskChar = credentialService.getCharacteristic(pskCharacteristicUuid)
 
                 if (ssidChar != null && pskChar != null) {
-                    Log.d(TAG, "GATT Client: Found SSID and PSK characteristics. Reading SSID...")
+                    Log.d(TAG, "GATT Client: Found SSID (perms: ${ssidChar.permissions}) and PSK (perms: ${pskChar.permissions}) characteristics. Reading SSID...")
                     if (!gatt.readCharacteristic(ssidChar)) {
                         Log.e(TAG, "GATT Client: Failed to initiate read for SSID characteristic.")
                         gatt.disconnect()
@@ -876,7 +867,7 @@ class BleManager(
             val device = gatt.device ?: return
             val charUuid = characteristic.uuid
 
-            Log.d(TAG, "GATT Client: Read char $charUuid status $status. Current bond state: ${bondStateToString(device.bondState)}")
+            Log.d(TAG, "GATT Client: Read char $charUuid status $status. Value: '${String(value, Charsets.UTF_8)}'. Current bond state: ${bondStateToString(device.bondState)}")
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 sendReceivedDataUpdate(device, charUuid, value)
 
@@ -894,23 +885,12 @@ class BleManager(
                     }
                 } else if (charUuid == pskCharacteristicUuid) {
                     Log.i(TAG, "GATT Client: Read PSK successful. Credentials received.")
-                    gatt.disconnect() // Disconnect after reading both characteristics
+                    gatt.disconnect()
                 }
-            } else if (status == BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION && device.bondState == BluetoothDevice.BOND_BONDED) {
-                Log.w(TAG, "GATT Client: Read failed with GATT_INSUFFICIENT_AUTHENTICATION for $charUuid even though client sees bonded. Consider a retry or re-pairing if persistent.")
-                // OPTIONALLY: Implement a single retry mechanism here after a short delay.
-                // For example:
-                // if (!characteristic.getBooleanExtra("read_retried", false)) { // Crude way to mark retry
-                //    Log.d(TAG, "Retrying read for $charUuid after a short delay.");
-                //    characteristic.putExtra("read_retried", true); // Mark it
-                //    mainHandler.postDelayed({
-                //        if (clientGatt == gatt && gatt.device.address == device.address) { // Still connected to same device
-                //            gatt.readCharacteristic(characteristic)
-                //        }
-                //    }, 300) // 300ms delay
-                //    return // Don't disconnect yet
-                // }
-                gatt.disconnect() // If retry is not implemented or fails, disconnect
+            } else if (status == BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION || status == BluetoothGatt.GATT_INSUFFICIENT_ENCRYPTION) {
+                 Log.w(TAG, "GATT Client: Read failed for $charUuid with status $status (Insufficient Auth/Encryption). Bond state: ${bondStateToString(device.bondState)}. Characteristic requires encryption: ${(characteristic.permissions and BluetoothGattCharacteristic.PERMISSION_READ_ENCRYPTED) != 0}")
+                 // This can happen if the characteristic requires encryption but the link is not encrypted (e.g., bonding failed or not done).
+                gatt.disconnect()
             } else {
                 Log.e(TAG, "GATT Client: Characteristic read failed for $charUuid with status $status. Bond state: ${bondStateToString(device.bondState)}")
                 gatt.disconnect()
@@ -923,8 +903,10 @@ class BleManager(
             characteristic: BluetoothGattCharacteristic?,
             status: Int
         ) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) { // Guard for the deprecated API
                 if (characteristic != null && gatt != null) {
+                     // The characteristic.value might be stale here in some cases if not updated by the stack before this callback.
+                     // The new onCharacteristicRead callback is preferred.
                     onCharacteristicRead(gatt, characteristic, characteristic.value ?: byteArrayOf(), status)
                 }
             }

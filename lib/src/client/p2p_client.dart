@@ -30,8 +30,14 @@ class FlutterP2pClient extends FlutterP2pConnectionBase {
   /// Constructor for [FlutterP2pClient].
   ///
   /// [serviceUuid] is an optional custom UUID for the BLE service.
-  /// If null, a default UUID is used.
-  FlutterP2pClient({super.serviceUuid});
+  ///               If null, a default UUID is used.
+  /// [bondingRequired] optional bonding by BLE service.
+  /// [encryptionRequired] optional encryption by BLE service.
+  FlutterP2pClient({
+    super.serviceUuid,
+    super.bondingRequired,
+    super.encryptionRequired,
+  });
 
   /// Returns `true` if the client is currently scanning for BLE devices.
   bool get isScanning => _isScanning;
@@ -63,6 +69,8 @@ class FlutterP2pClient extends FlutterP2pConnectionBase {
     _scanTimer = null;
     await FlutterP2pConnectionPlatform.instance.initialize(
       serviceUuid: serviceUuid,
+      bondingRequired: bondingRequired,
+      encryptionRequired: encryptionRequired,
     );
   }
 

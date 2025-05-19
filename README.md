@@ -203,6 +203,12 @@ class _MyHostWidgetState extends State<MyHostWidget> {
     // Optional: A custom UUID string for the BLE service.
     // If clients use BLE discovery with a custom UUID, it must match this.
     // serviceUuid: "YOUR_CUSTOM_SERVICE_UUID_HERE",
+    //
+    // Optional: If bonding is required for the BLE service. It is `false` by default.
+    // bondingRequired: false, 
+    //
+    // Optional: If encryption is required for the BLE service. It is `false` by default.
+    // encryptionRequired: false,
   );
   StreamSubscription<HotspotHostState>? _hostStateSubscription;
   StreamSubscription<List<P2pClientInfo>>? _clientsSubscription;
@@ -348,6 +354,12 @@ class _MyClientWidgetState extends State<MyClientWidget> {
   final FlutterP2pClient _client = FlutterP2pClient(
     // Optional: If the host uses a custom BLE service UUID, specify it here for discovery.
     // serviceUuid: "YOUR_CUSTOM_SERVICE_UUID_HERE",
+    //
+    // Optional: If bonding is required for the BLE service. It is `false` by default.
+    // bondingRequired: true, 
+    //
+    // Optional: If encryption is required for the BLE service. It is `false` by default.
+    // encryptionRequired: true,
   );
   StreamSubscription<List<BleDiscoveredDevice>>? _discoverySubscription;
   StreamSubscription<HotspotClientState>? _clientStateSubscription;
@@ -686,6 +698,8 @@ Manages the creation and operation of a P2P group (acting as a server/hotspot).
 
 - **Constructor:** `FlutterP2pHost({String? serviceUuid})`
   - `serviceUuid` (Optional): A custom UUID string for the BLE service used for advertising hotspot credentials. If `null`, a default UUID is used. If clients are to discover this host via BLE using a custom UUID, they must be initialized with the same `serviceUuid`.
+  - `bondingRequired` (Optional, default: false): Whether bonding is required for the BLE service.
+  - `encryptionRequired` (Optional, default: false): Whether encryption is required for the BLE service.
 - **Key Properties:**
   - `isGroupCreated`: `bool` - True if `createGroup()` has been called and the native group creation process has started.
   - `isAdvertising`: `bool` - True if BLE advertising of hotspot credentials is currently active (occurs if `createGroup(advertise: true)` was successful).
@@ -720,6 +734,8 @@ Manages discovery of and connection to a P2P host.
 
 - **Constructor:** `FlutterP2pClient({String? serviceUuid})`
   - `serviceUuid` (Optional): A custom UUID string for the BLE service used for scanning for hosts. If `null`, a default UUID is used. If the host is advertising with a custom UUID, this **must match** for discovery to work.
+  - `bondingRequired` (Optional, default: true): Whether bonding is required for the BLE service.
+  - `encryptionRequired` (Optional, default: true): Whether encryption is required for the BLE service.
 - **Key Properties:**
   - `isScanning`: `bool` - True if BLE scanning for hosts is currently active.
   - `isConnected`: `bool` - True if the client is successfully connected to a host's P2P transport layer.

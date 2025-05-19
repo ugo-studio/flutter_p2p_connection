@@ -27,8 +27,14 @@ class FlutterP2pHost extends FlutterP2pConnectionBase {
   /// Constructor for [FlutterP2pHost].
   ///
   /// [serviceUuid] is an optional custom UUID for the BLE service.
-  /// If null, a default UUID is used.
-  FlutterP2pHost({super.serviceUuid});
+  ///               If null, a default UUID is used.
+  /// [bondingRequired] optional bonding by BLE service.
+  /// [encryptionRequired] optional encryption by BLE service.
+  FlutterP2pHost({
+    super.serviceUuid,
+    super.bondingRequired,
+    super.encryptionRequired,
+  });
 
   /// Returns `true` if a Wi-Fi Direct group has been successfully created.
   bool get isGroupCreated => _isGroupCreated;
@@ -55,6 +61,8 @@ class FlutterP2pHost extends FlutterP2pConnectionBase {
     _lastKnownHotspotState = null;
     await FlutterP2pConnectionPlatform.instance.initialize(
       serviceUuid: serviceUuid,
+      bondingRequired: bondingRequired,
+      encryptionRequired: encryptionRequired,
     );
   }
 

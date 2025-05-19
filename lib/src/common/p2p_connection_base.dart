@@ -15,8 +15,18 @@ class FlutterP2pConnectionBase {
   /// Optional custom UUID for the BLE service. If null, a default UUID is used.
   final String? serviceUuid;
 
+  /// Optional bonding by BLE service
+  final bool? bondingRequired;
+
+  /// Optional encryption by BLE service
+  final bool? encryptionRequired;
+
   /// Constructor for [FlutterP2pConnectionBase].
-  const FlutterP2pConnectionBase({this.serviceUuid});
+  const FlutterP2pConnectionBase({
+    this.serviceUuid,
+    this.bondingRequired,
+    this.encryptionRequired,
+  });
 
   /// Retrieves the model identifier of the current device.
   ///

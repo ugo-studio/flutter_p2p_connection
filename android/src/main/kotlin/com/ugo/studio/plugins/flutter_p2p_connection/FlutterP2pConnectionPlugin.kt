@@ -158,7 +158,9 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
             "getPlatformModel" -> { result.success("${Build.MODEL}"); return }
             "initialize" -> { 
                 val serviceUuid: String? = call.argument("serviceUuid") // Optional UUID for BLE
-                initialize(result, serviceUuid); 
+                val bondingRequired: Boolean? = call.argument("bondingRequired") // Optional bonding for BLE
+                val encryptionRequired: Boolean? = call.argument("encryptionRequired") // Optional encryption for BLE
+                initialize(result, serviceUuid, bondingRequired, encryptionRequired); 
                 return 
             }
             // Permission/Service checks might need minimal init
@@ -291,7 +293,7 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
 
     // --- Initialization and Disposal ---
 
-    private fun initialize(result: Result, serviceUuid: String?) {
+    private fun initialize(result: Result, serviceUuid: String? = null, bondingRequired: Boolean? = null, encryptionRequired: Boolean? = null) {
         if (isInitialized) {
             Log.d(TAG, "Already initialized.")
             result.success(true)
@@ -336,8 +338,8 @@ class FlutterP2pConnectionPlugin : FlutterPlugin, MethodCallHandler, ActivityAwa
             clientManager.initialize()
 
             // Initialize BleManager - MUST come after Permissions/Service Manager
-            bleManager = BleManager(applicationContext, bluetoothAdapter, serviceUuid, permissionsManager, serviceManager, mainHandler)
-            bleManager.initialize()
+            bleManager = BleManager(applicationContext, bluetoothAdapter, permissionsManager, serviceManager, mainHandler)
+            bleManager.initialize(serviceUuid, bondingRequired, encryptionRequired)
 
 
             // Set EventChannel Stream Handlers
