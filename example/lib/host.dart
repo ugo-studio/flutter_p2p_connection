@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_p2p_connection/flutter_p2p_connection.dart';
-import 'package:flutter_p2p_connection/p2p_transport.dart';
 import 'package:flutter_p2p_connection_example/qr/qr_image_page.dart';
 
 class HostPage extends StatefulWidget {
@@ -16,7 +15,7 @@ class HostPage extends StatefulWidget {
 
 class _HostPageState extends State<HostPage> {
   final TextEditingController textEditingController = TextEditingController();
-  late FlutterP2pHost flutterP2P;
+  late FlutterP2pHost p2pInterface;
 
   StreamSubscription<HotspotHostState>? hotspotStateStream;
   StreamSubscription<String>? receivedTextStream;
@@ -26,9 +25,9 @@ class _HostPageState extends State<HostPage> {
   @override
   void initState() {
     super.initState();
-    flutterP2P = FlutterP2pHost();
-    flutterP2P.initialize().whenComplete(() {
-      hotspotStateStream = flutterP2P.streamHotspotState().listen((state) {
+    p2pInterface = FlutterP2pHost();
+    p2pInterface.initialize().whenComplete(() {
+      hotspotStateStream = p2pInterface.streamHotspotState().listen((state) {
         setState(() {
           hotspotState = state;
         });
@@ -38,7 +37,7 @@ class _HostPageState extends State<HostPage> {
           snack('Hotspot Inactive. Reason: ${state.failureReason}');
         }
       });
-      receivedTextStream = flutterP2P.streamReceivedTexts().listen((text) {
+      receivedTextStream = p2pInterface.streamReceivedTexts().listen((text) {
         snack('Received text: $text');
       });
     });
@@ -46,7 +45,7 @@ class _HostPageState extends State<HostPage> {
 
   @override
   void dispose() {
-    flutterP2P.dispose();
+    p2pInterface.dispose();
     textEditingController.dispose();
     hotspotStateStream?.cancel();
     receivedTextStream?.cancel();
@@ -117,32 +116,32 @@ class _HostPageState extends State<HostPage> {
   }
 
   void askRequiredPermission() async {
-    var storageGranted = await flutterP2P.askStoragePermission();
-    var p2pGranted = await flutterP2P.askP2pPermissions();
-    var bleGranted = await flutterP2P.askBluetoothPermissions();
+    var storageGranted = await p2pInterface.askStoragePermission();
+    var p2pGranted = await p2pInterface.askP2pPermissions();
+    var bleGranted = await p2pInterface.askBluetoothPermissions();
     snack("Storage: $storageGranted, P2P: $p2pGranted, Bluetooth: $bleGranted");
   }
 
   void enableWifi() async {
-    var wifiEnabled = await flutterP2P.enableWifiServices();
+    var wifiEnabled = await p2pInterface.enableWifiServices();
     snack("Wi-Fi enabled: $wifiEnabled");
   }
 
   void enableLocation() async {
-    var locationEnabled = await flutterP2P.enableLocationServices();
+    var locationEnabled = await p2pInterface.enableLocationServices();
     snack("Location enabled: $locationEnabled");
   }
 
   void enableBluetooth() async {
-    var bluetoothEnabled = await flutterP2P.enableBluetoothServices();
+    var bluetoothEnabled = await p2pInterface.enableBluetoothServices();
     snack("Bluetooth enabled: $bluetoothEnabled");
   }
 
   void createGroup() async {
     snack("Creating group...");
     try {
-      await flutterP2P.createGroup();
-      snack("Group created. Advertising: ${flutterP2P.isAdvertising}");
+      await p2pInterface.createGroup();
+      snack("Group created. Advertising: ${p2pInterface.isAdvertising}");
     } catch (e) {
       snack("Failed to create group: $e");
     }
@@ -152,7 +151,7 @@ class _HostPageState extends State<HostPage> {
   void removeGroup() async {
     snack("Removing group...");
     try {
-      await flutterP2P.removeGroup();
+      await p2pInterface.removeGroup();
       snack("Group removed.");
     } catch (e) {
       snack("Failed to remove group: $e");
@@ -181,17 +180,17 @@ class _HostPageState extends State<HostPage> {
       snack('Enter a message to send.');
       return;
     }
-    if (!flutterP2P.isGroupCreated) {
+    if (!p2pInterface.isGroupCreated) {
       snack('Group not created.');
       return;
     }
-    await flutterP2P.broadcastText(text);
+    await p2pInterface.broadcastText(text);
     textEditingController.clear();
     snack('Message sent.');
   }
 
   void sendFile() async {
-    if (!flutterP2P.isGroupCreated) {
+    if (!p2pInterface.isGroupCreated) {
       snack('Group not created.');
       return;
     }
@@ -205,7 +204,7 @@ class _HostPageState extends State<HostPage> {
 
     if (path != null) {
       File file = File(path);
-      flutterP2P.broadcastFile(file);
+      p2pInterface.broadcastFile(file);
       snack("Sending file: ${file.path.split('/').last}");
     } else {
       snack("File selection canceled.");
@@ -233,7 +232,7 @@ class _HostPageState extends State<HostPage> {
   @override
   Widget build(BuildContext context) {
     bool isGroupActive =
-        flutterP2P.isGroupCreated && hotspotState?.isActive == true;
+        p2pInterface.isGroupCreated && hotspotState?.isActive == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -282,7 +281,7 @@ class _HostPageState extends State<HostPage> {
                 )
               ] else ...[
                 Text(
-                    "Status: ${flutterP2P.isGroupCreated ? (hotspotState?.isActive == false ? 'Inactive (Error: ${hotspotState?.failureReason})' : 'Creating...') : 'Not Created'}",
+                    "Status: ${p2pInterface.isGroupCreated ? (hotspotState?.isActive == false ? 'Inactive (Error: ${hotspotState?.failureReason})' : 'Creating...') : 'Not Created'}",
                     style: const TextStyle(color: Colors.orange, fontSize: 16)),
                 const SizedBox(height: 10),
                 ElevatedButton.icon(
@@ -298,7 +297,7 @@ class _HostPageState extends State<HostPage> {
               "Connected Clients",
               [
                 StreamBuilder<List<P2pClientInfo>>(
-                  stream: flutterP2P.streamClientList(),
+                  stream: p2pInterface.streamClientList(),
                   builder: (context, snapshot) {
                     var clientList = snapshot.data ?? [];
                     clientList = clientList
@@ -356,7 +355,7 @@ class _HostPageState extends State<HostPage> {
               "Sent Files Status",
               [
                 StreamBuilder<List<HostedFileInfo>>(
-                  stream: flutterP2P.streamSentFilesInfo(),
+                  stream: p2pInterface.streamSentFilesInfo(),
                   builder: (context, snapshot) {
                     var sentFiles = snapshot.data ?? [];
                     if (sentFiles.isEmpty) {
@@ -377,12 +376,12 @@ class _HostPageState extends State<HostPage> {
                                 children: file.receiverIds.map((id) {
                                   P2pClientInfo? receiverInfo;
                                   try {
-                                    // Get client list from stream, not directly from flutterP2P property for consistency
-                                    final currentClients = flutterP2P
+                                    // Get client list from stream, not directly from p2pInterface property for consistency
+                                    final currentClients = p2pInterface
                                         .clientList; // Assuming this is kept up-to-date or use another stream
-                                    receiverInfo = currentClients.firstWhere(
-                                        (c) => c.id == id,
-                                        orElse: null);
+                                    receiverInfo = currentClients
+                                        .where((c) => c.id == id)
+                                        .firstOrNull;
                                   } catch (_) {}
                                   var name = receiverInfo?.username ??
                                       id.substring(0, min(8, id.length));
@@ -404,7 +403,7 @@ class _HostPageState extends State<HostPage> {
               "Received Files",
               [
                 StreamBuilder<List<ReceivableFileInfo>>(
-                  stream: flutterP2P.streamReceivedFilesInfo(),
+                  stream: p2pInterface.streamReceivedFilesInfo(),
                   builder: (context, snapshot) {
                     var receivedFiles = snapshot.data ?? [];
                     if (receivedFiles.isEmpty) {
@@ -429,7 +428,7 @@ class _HostPageState extends State<HostPage> {
                                         snack(
                                             "Downloading ${file.info.name}...");
                                         var downloaded =
-                                            await flutterP2P.downloadFile(
+                                            await p2pInterface.downloadFile(
                                                 file.info.id,
                                                 '/storage/emulated/0/Download/');
                                         snack(
