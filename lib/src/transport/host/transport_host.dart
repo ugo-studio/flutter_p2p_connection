@@ -248,8 +248,8 @@ class P2pTransportHost with FileRequestServerMixin {
     final fileInfo = _hostedFiles[progressUpdate.fileId];
     if (fileInfo != null) {
       if (fileInfo.receiverIds.contains(progressUpdate.receiverId)) {
-        fileInfo.updateProgress(
-            progressUpdate.receiverId, progressUpdate.bytesDownloaded);
+        fileInfo.updateProgress(progressUpdate.receiverId,
+            progressUpdate.bytesDownloaded, progressUpdate.fileState);
         debugPrint(
             "$_logPrefix [$username]: Progress update for ${fileInfo.info.name} from ${progressUpdate.receiverId}: ${progressUpdate.bytesDownloaded}/${fileInfo.info.size} bytes.");
       } else {
@@ -440,7 +440,7 @@ class P2pTransportHost with FileRequestServerMixin {
                         (lastReportedBytes / totalBytes * 100).toInt()) ||
                 bytesReceived == totalBytes) {
               _sendProgressUpdateToServer(
-                  fileId, fileInfo.senderId, bytesReceived);
+                  fileId, fileInfo.senderId, bytesReceived, receivable.state);
               lastReportedBytes = bytesReceived;
             }
           }
@@ -448,12 +448,11 @@ class P2pTransportHost with FileRequestServerMixin {
       }
 
       progressUpdateTimer = Timer.periodic(
-          const Duration(milliseconds: 500), (_) => reportProgress());
+          const Duration(milliseconds: 1000), (_) => reportProgress());
 
       await for (var chunk in response.stream) {
         fileSink.add(chunk);
         bytesReceived += chunk.length;
-        // reportProgress(); // Reporting in timer is often smoother
       }
 
       await fileSink.flush();
@@ -493,9 +492,15 @@ class P2pTransportHost with FileRequestServerMixin {
   }
 
   Future<void> _sendProgressUpdateToServer(
-      String fileId, String originalSenderId, int bytesDownloaded) async {
+      String fileId,
+      String originalSenderId,
+      int bytesDownloaded,
+      ReceivableFileState fileState) async {
     final progressPayload = P2pFileProgressUpdate(
-        fileId: fileId, receiverId: hostId, bytesDownloaded: bytesDownloaded);
+        fileId: fileId,
+        receiverId: hostId,
+        bytesDownloaded: bytesDownloaded,
+        fileState: fileState);
     final message = P2pMessage(
         senderId: hostId,
         type: P2pMessageType.fileProgressUpdate,

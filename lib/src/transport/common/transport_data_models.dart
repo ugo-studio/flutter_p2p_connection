@@ -206,11 +206,15 @@ class P2pFileProgressUpdate {
   /// The number of bytes downloaded so far.
   final int bytesDownloaded;
 
+  /// The state of the file.
+  final ReceivableFileState fileState;
+
   /// Creates a [P2pFileProgressUpdate] instance.
   const P2pFileProgressUpdate({
     required this.fileId,
     required this.receiverId,
     required this.bytesDownloaded,
+    required this.fileState,
   });
 
   /// Creates a [P2pFileProgressUpdate] instance from a JSON map.
@@ -219,6 +223,9 @@ class P2pFileProgressUpdate {
       fileId: json['fileId'] as String? ?? '',
       receiverId: json['receiverId'] as String? ?? '',
       bytesDownloaded: json['bytesDownloaded'] as int? ?? 0,
+      fileState: ReceivableFileState.values.firstWhere(
+        (e) => e.name == json['fileState'],
+      ),
     );
   }
 
@@ -238,6 +245,7 @@ class P2pFileProgressUpdate {
         'fileId': fileId,
         'receiverId': receiverId,
         'bytesDownloaded': bytesDownloaded,
+        'fileState': fileState.name,
       };
 
   /// Converts this [P2pFileProgressUpdate] instance to a JSON string.
@@ -245,7 +253,7 @@ class P2pFileProgressUpdate {
 
   @override
   String toString() =>
-      'P2pFileProgressUpdate(fileId: $fileId, receiver: $receiverId, bytes: $bytesDownloaded)';
+      'P2pFileProgressUpdate(fileId: $fileId, receiver: $receiverId, bytes: $bytesDownloaded, fileState: $fileState)';
 
   @override
   bool operator ==(Object other) =>
@@ -254,9 +262,10 @@ class P2pFileProgressUpdate {
           runtimeType == other.runtimeType &&
           fileId == other.fileId &&
           receiverId == other.receiverId &&
-          bytesDownloaded == other.bytesDownloaded;
+          bytesDownloaded == other.bytesDownloaded &&
+          fileState == fileState;
   @override
-  int get hashCode => Object.hash(fileId, receiverId, bytesDownloaded);
+  int get hashCode => Object.hash(fileId, receiverId, bytesDownloaded, fileState);
 }
 
 /// Represents a generic P2P message exchanged between clients.

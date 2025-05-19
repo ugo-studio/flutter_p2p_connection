@@ -82,8 +82,8 @@ class MethodChannelFlutterP2pConnection extends FlutterP2pConnectionPlatform {
   }) async {
     await methodChannel.invokeMethod('initialize', {
       'serviceUuid': serviceUuid,
-      'bondingRequired': bondingRequired,
-      'encryptionRequired': encryptionRequired,
+      'bondingRequired': bondingRequired ?? false,
+      'encryptionRequired': encryptionRequired ?? false,
     });
   }
 

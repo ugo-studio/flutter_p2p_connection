@@ -508,7 +508,8 @@ class _ClientPageState extends State<ClientPage> {
                                       id.substring(0, min(8, id.length));
                                   var percent =
                                       file.getProgressPercent(id).round();
-                                  return Text("$name: $percent%");
+                                  return Text(
+                                      "$name: ${file.state.name}, $percent%");
                                 }).toList(),
                               ),
                             ),

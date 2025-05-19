@@ -400,8 +400,8 @@ class P2pTransportClient with FileRequestServerMixin {
     final fileInfo = _hostedFiles[progressUpdate.fileId];
     if (fileInfo != null) {
       if (fileInfo.receiverIds.contains(progressUpdate.receiverId)) {
-        fileInfo.updateProgress(
-            progressUpdate.receiverId, progressUpdate.bytesDownloaded);
+        fileInfo.updateProgress(progressUpdate.receiverId,
+            progressUpdate.bytesDownloaded, progressUpdate.fileState);
         debugPrint(
             "$_logPrefix [$username]: Progress update for shared file ${fileInfo.info.name} from ${progressUpdate.receiverId}: ${progressUpdate.bytesDownloaded}/${fileInfo.info.size} bytes.");
       } else {
@@ -583,7 +583,7 @@ class P2pTransportClient with FileRequestServerMixin {
                         (lastReportedBytes / totalBytes * 100).toInt()) ||
                 bytesReceived == totalBytes) {
               _sendProgressUpdateToServer(
-                  fileId, fileInfo.senderId, bytesReceived);
+                  fileId, fileInfo.senderId, bytesReceived, receivable.state);
               lastReportedBytes = bytesReceived;
             }
           }
@@ -591,7 +591,7 @@ class P2pTransportClient with FileRequestServerMixin {
       }
 
       progressUpdateTimer = Timer.periodic(
-          const Duration(milliseconds: 500), (_) => reportProgress());
+          const Duration(milliseconds: 1000), (_) => reportProgress());
 
       await for (var chunk in response.stream) {
         fileSink.add(chunk);
@@ -635,10 +635,17 @@ class P2pTransportClient with FileRequestServerMixin {
   }
 
   Future<void> _sendProgressUpdateToServer(
-      String fileId, String originalSenderId, int bytesDownloaded) async {
+      String fileId,
+      String originalSenderId,
+      int bytesDownloaded,
+      ReceivableFileState fileState) async {
     if (!isConnected) return;
     final progressPayload = P2pFileProgressUpdate(
-        fileId: fileId, receiverId: clientId, bytesDownloaded: bytesDownloaded);
+      fileId: fileId,
+      receiverId: clientId,
+      bytesDownloaded: bytesDownloaded,
+      fileState: fileState,
+    );
 
     // Find the original sender in the current client list to send the update to.
     // If the original sender is the host, it might not be in the _clientList explicitly if _clientList only contains other clients.

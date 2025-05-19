@@ -8,7 +8,13 @@ class HostedFileInfo {
 
   /// The local path to the file on the host's system.
   final String localPath;
+
+  ReceivableFileState _state = ReceivableFileState.idle;
+
   final Map<String, int> _downloadProgressBytes;
+
+  /// The current state of the file (e.g., idle, downloading, completed).
+  ReceivableFileState get state => _state;
 
   /// A list of client IDs who are recipients of this file.
   List<String> get receiverIds => _downloadProgressBytes.keys.toList();
@@ -36,10 +42,15 @@ class HostedFileInfo {
   /// Updates the download progress for a specific receiver.
   ///
   /// Only updates if the new [bytes] value is greater than the current progress.
-  void updateProgress(String receiverId, int bytes) {
+  void updateProgress(
+      String receiverId, int bytes, ReceivableFileState newState) {
     final currentBytes = _downloadProgressBytes[receiverId] ?? 0;
     if (bytes > currentBytes) {
       _downloadProgressBytes[receiverId] = bytes;
+    }
+    // upate state of file
+    if (newState != _state) {
+      _state = newState;
     }
   }
 }
