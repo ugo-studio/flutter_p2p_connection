@@ -10,29 +10,53 @@ import 'package:uuid/uuid.dart';
 
 // --- Enums and Basic Info Classes ---
 
+/// Enum representing the type of a P2P message.
 enum P2pMessageType {
+  /// Message contains a data payload (text and/or files).
   payload,
+
+  /// Message contains an updated list of connected clients.
   clientList,
+
+  /// Message contains an update on file download progress.
   fileProgressUpdate,
+
+  /// Message type is unknown or cannot be determined.
   unknown,
 }
 
+/// Enum representing the state of a file that can be received.
 enum ReceivableFileState {
+  /// The file is available for download, but no download is in progress.
   idle,
+
+  /// The file is currently being downloaded.
   downloading,
+
+  /// The file download has completed successfully.
   completed,
+
+  /// An error occurred during the file download.
   error,
 }
 
+/// Represents information about a P2P client.
 @immutable
 class P2pClientInfo {
+  /// Unique identifier for the client.
   final String id;
+
+  /// Username of the client.
   final String username;
+
+  /// Flag indicating if this client is the host of the P2P session.
   final bool isHost;
 
+  /// Creates a [P2pClientInfo] instance.
   const P2pClientInfo(
       {required this.id, required this.username, required this.isHost});
 
+  /// Creates a [P2pClientInfo] instance from a JSON map.
   factory P2pClientInfo.fromJson(Map<String, dynamic> json) {
     return P2pClientInfo(
       id: json['id'] as String? ?? 'unknown_id',
@@ -41,6 +65,7 @@ class P2pClientInfo {
     );
   }
 
+  /// Converts this [P2pClientInfo] instance to a JSON map.
   Map<String, dynamic> toJson() => {
         'id': id,
         'username': username,
@@ -62,16 +87,31 @@ class P2pClientInfo {
   int get hashCode => Object.hash(id, username, isHost);
 }
 
+/// Represents information about a file being shared in the P2P network.
 @immutable
 class P2pFileInfo {
+  /// Unique identifier for the file.
   final String id;
+
+  /// Name of the file.
   final String name;
+
+  /// Size of the file in bytes.
   final int size;
+
+  /// ID of the client sending the file.
   final String senderId;
+
+  /// IP address of the host serving the file.
   final String senderHostIp;
+
+  /// Port number on which the file is being served.
   final int senderPort;
+
+  /// Additional metadata associated with the file.
   final Map<String, dynamic> metadata;
 
+  /// Creates a [P2pFileInfo] instance.
   const P2pFileInfo({
     required this.id,
     required this.name,
@@ -82,6 +122,7 @@ class P2pFileInfo {
     this.metadata = const {},
   });
 
+  /// Creates a [P2pFileInfo] instance from a JSON map.
   factory P2pFileInfo.fromJson(Map<String, dynamic> json) {
     return P2pFileInfo(
       id: json['id'] as String? ?? const Uuid().v4(),
@@ -94,6 +135,7 @@ class P2pFileInfo {
     );
   }
 
+  /// Converts this [P2pFileInfo] instance to a JSON map.
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -124,13 +166,19 @@ class P2pFileInfo {
       Object.hash(id, name, size, senderId, senderHostIp, senderPort, metadata);
 }
 
+/// Represents the payload of a P2P message, containing text and/or file information.
 @immutable
 class P2pMessagePayload {
+  /// The text content of the message.
   final String text;
+
+  /// A list of files included in the message.
   final List<P2pFileInfo> files;
 
+  /// Creates a [P2pMessagePayload] instance.
   const P2pMessagePayload({this.text = '', this.files = const []});
 
+  /// Creates a [P2pMessagePayload] instance from a JSON map.
   factory P2pMessagePayload.fromJson(Map<String, dynamic> json) {
     return P2pMessagePayload(
       text: json['text'] as String? ?? '',
@@ -141,6 +189,7 @@ class P2pMessagePayload {
     );
   }
 
+  /// Creates a [P2pMessagePayload] instance from a JSON string.
   factory P2pMessagePayload.fromJsonString(String jsonString) {
     try {
       final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
@@ -151,11 +200,13 @@ class P2pMessagePayload {
     }
   }
 
+  /// Converts this [P2pMessagePayload] instance to a JSON map.
   Map<String, dynamic> toJson() => {
         'text': text,
         'files': files.map((f) => f.toJson()).toList(),
       };
 
+  /// Converts this [P2pMessagePayload] instance to a JSON string.
   String toJsonString() => jsonEncode(toJson());
 
   @override
@@ -179,18 +230,26 @@ class P2pMessagePayload {
   int get hashCode => Object.hash(text, Object.hashAll(files));
 }
 
+/// Represents an update on the progress of a file download.
 @immutable
 class P2pFileProgressUpdate {
+  /// The ID of the file whose download progress is being updated.
   final String fileId;
+
+  /// The ID of the client receiving the file.
   final String receiverId;
+
+  /// The number of bytes downloaded so far.
   final int bytesDownloaded;
 
+  /// Creates a [P2pFileProgressUpdate] instance.
   const P2pFileProgressUpdate({
     required this.fileId,
     required this.receiverId,
     required this.bytesDownloaded,
   });
 
+  /// Creates a [P2pFileProgressUpdate] instance from a JSON map.
   factory P2pFileProgressUpdate.fromJson(Map<String, dynamic> json) {
     return P2pFileProgressUpdate(
       fileId: json['fileId'] as String? ?? '',
@@ -199,6 +258,7 @@ class P2pFileProgressUpdate {
     );
   }
 
+  /// Creates a [P2pFileProgressUpdate] instance from a JSON string.
   factory P2pFileProgressUpdate.fromJsonString(String jsonString) {
     try {
       final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
@@ -209,12 +269,14 @@ class P2pFileProgressUpdate {
     }
   }
 
+  /// Converts this [P2pFileProgressUpdate] instance to a JSON map.
   Map<String, dynamic> toJson() => {
         'fileId': fileId,
         'receiverId': receiverId,
         'bytesDownloaded': bytesDownloaded,
       };
 
+  /// Converts this [P2pFileProgressUpdate] instance to a JSON string.
   String toJsonString() => jsonEncode(toJson());
 
   @override
@@ -233,13 +295,24 @@ class P2pFileProgressUpdate {
   int get hashCode => Object.hash(fileId, receiverId, bytesDownloaded);
 }
 
+/// Represents a generic P2P message exchanged between clients.
 @immutable
 class P2pMessage {
+  /// The ID of the client sending the message.
   final String senderId;
+
+  /// The type of the message.
   final P2pMessageType type;
+
+  /// The payload of the message, which can be [P2pMessagePayload] or [P2pFileProgressUpdate], or null.
   final dynamic payload;
+
+  /// A list of clients targeted by or relevant to this message.
+  /// For [P2pMessageType.clientList], this contains the full list of clients.
+  /// For [P2pMessageType.payload] or [P2pMessageType.fileProgressUpdate], this lists the intended recipients.
   final List<P2pClientInfo> clients;
 
+  /// Creates a [P2pMessage] instance.
   const P2pMessage({
     required this.senderId,
     required this.type,
@@ -247,6 +320,7 @@ class P2pMessage {
     this.clients = const [],
   });
 
+  /// Creates a [P2pMessage] instance from a JSON map.
   factory P2pMessage.fromJson(Map<String, dynamic> json) {
     final type = P2pMessageType.values.firstWhere((e) => e.name == json['type'],
         orElse: () => P2pMessageType.unknown);
@@ -272,6 +346,7 @@ class P2pMessage {
     );
   }
 
+  /// Creates a [P2pMessage] instance from a JSON string.
   factory P2pMessage.fromJsonString(String jsonString) {
     try {
       final Map<String, dynamic> jsonMap = jsonDecode(jsonString);
@@ -282,6 +357,7 @@ class P2pMessage {
     }
   }
 
+  /// Converts this [P2pMessage] instance to a JSON map.
   Map<String, dynamic> toJson() => {
         'senderId': senderId,
         'type': type.name,
@@ -293,6 +369,7 @@ class P2pMessage {
         'clients': clients.map((c) => c.toJson()).toList(),
       };
 
+  /// Converts this [P2pMessage] instance to a JSON string.
   String toJsonString() => jsonEncode(toJson());
 
   @override
@@ -317,25 +394,41 @@ class P2pMessage {
       Object.hash(senderId, type, payload, Object.hashAll(clients));
 }
 
+/// Manages information about a file being hosted (shared) by the local client.
 class HostedFileInfo {
+  /// Information about the file being hosted.
   final P2pFileInfo info;
+
+  /// The local path to the file on the host's system.
   final String localPath;
   final Map<String, int> _downloadProgressBytes;
 
+  /// A list of client IDs who are recipients of this file.
   List<String> get receiverIds => _downloadProgressBytes.keys.toList();
 
+  /// Creates a [HostedFileInfo] instance.
+  ///
+  /// [info] is the general P2P file information.
+  /// [localPath] is the path to the file on the local filesystem.
+  /// [recipientIds] is a list of client IDs intended to receive this file.
   HostedFileInfo({
     required this.info,
     required this.localPath,
     required List<String> recipientIds,
   }) : _downloadProgressBytes = {for (var id in recipientIds) id: 0};
 
+  /// Gets the download progress percentage for a specific receiver.
+  ///
+  /// Returns 0.0 if the file size is 0, or if the receiver ID is not found.
   double getProgressPercent(String receiverId) {
     final bytes = _downloadProgressBytes[receiverId];
     if (info.size == 0 || bytes == null) return 0.0;
     return (bytes / info.size) * 100.0;
   }
 
+  /// Updates the download progress for a specific receiver.
+  ///
+  /// Only updates if the new [bytes] value is greater than the current progress.
   void updateProgress(String receiverId, int bytes) {
     final currentBytes = _downloadProgressBytes[receiverId] ?? 0;
     if (bytes > currentBytes) {
@@ -344,12 +437,21 @@ class HostedFileInfo {
   }
 }
 
+/// Manages information about a file that can be received by the local client.
 class ReceivableFileInfo {
+  /// Information about the file that can be received.
   final P2pFileInfo info;
+
+  /// The current state of the file (e.g., idle, downloading, completed).
   ReceivableFileState state;
+
+  /// The download progress percentage (0.0 to 100.0).
   double downloadProgressPercent;
+
+  /// The local path where the file will be/is saved.
   String? savePath;
 
+  /// Creates a [ReceivableFileInfo] instance.
   ReceivableFileInfo({
     required this.info,
     this.state = ReceivableFileState.idle,
@@ -358,13 +460,24 @@ class ReceivableFileInfo {
   });
 }
 
+/// Represents an update on the progress of a file download operation.
 class FileDownloadProgressUpdate {
+  /// The ID of the file being downloaded.
   final String fileId;
+
+  /// The download progress as a percentage (0.0 to 100.0).
   final double progressPercent;
+
+  /// The number of bytes downloaded so far.
   final int bytesDownloaded;
+
+  /// The total size of the file in bytes.
   final int totalSize;
+
+  /// The local path where the file is being saved.
   final String savePath;
 
+  /// Creates a [FileDownloadProgressUpdate] instance.
   FileDownloadProgressUpdate({
     required this.fileId,
     required this.progressPercent,
@@ -378,11 +491,20 @@ class FileDownloadProgressUpdate {
       'FileDownloadProgressUpdate(fileId: $fileId, progress: ${progressPercent.toStringAsFixed(1)}%, path: $savePath)';
 }
 
+/// Mixin providing common file request handling logic for HTTP servers
+/// that serve files in the P2P network.
 mixin _FileRequestServerMixin {
+  /// A map of hosted files, where the key is the file ID.
   Map<String, HostedFileInfo> get hostedFiles;
+
+  /// The username of the transport (host or client) for logging purposes.
   String get transportUsername; // For logging prefix
   static const String _logPrefixBase = "P2P FileServer";
 
+  /// Handles an incoming HTTP request for a file.
+  ///
+  /// This method processes requests to the `/file` endpoint, supporting
+  /// full file downloads and byte range requests.
   Future<void> handleFileRequest(HttpRequest request) async {
     final logPrefix = "$_logPrefixBase [$transportUsername]";
     final fileId = request.uri.queryParameters['id'];
@@ -485,9 +607,19 @@ mixin _FileRequestServerMixin {
   }
 }
 
+/// Manages the P2P host server, handling client connections and message broadcasting.
+///
+/// The host listens for incoming WebSocket connections from clients and facilitates
+/// message exchange and file sharing within the P2P group. It also serves files
+/// requested by clients.
 class P2pTransportHost with _FileRequestServerMixin {
+  /// The default port to attempt to bind the server to.
   final int defaultPort;
+
+  /// The username of the host.
   final String username;
+
+  /// Unique ID for this host instance.
   final String hostId = const Uuid().v4();
   HttpServer? _server;
   int? _portInUse;
@@ -504,16 +636,33 @@ class P2pTransportHost with _FileRequestServerMixin {
   @override
   String get transportUsername => username;
 
+  /// A stream of received text messages from clients.
   Stream<String> get receivedTextStream => _receivedTextController.stream;
+
+  /// The actual port the server is listening on, or null if not started.
   int? get portInUse => _portInUse;
+
+  /// A list of currently connected clients.
   List<P2pClientInfo> get clientList =>
       _clients.values.map((cl) => cl.info).toList();
+
+  /// A list of files currently being hosted by this server.
   List<HostedFileInfo> get hostedFileInfos => _hostedFiles.values.toList();
+
+  /// A list of files that this host has been informed about and can download.
   List<ReceivableFileInfo> get receivableFileInfos =>
       _receivableFiles.values.toList();
 
+  /// Creates a [P2pTransportHost] instance.
+  ///
+  /// [defaultPort] is the initial port to try for the server. If occupied, it will try subsequent ports.
+  /// [username] is the display name for this host.
   P2pTransportHost({required this.defaultPort, required this.username});
 
+  /// Starts the P2P host server.
+  ///
+  /// Tries to bind to [defaultPort] and subsequent ports if necessary.
+  /// Throws an exception if a port cannot be bound after several attempts.
   Future<void> start() async {
     if (_server != null) return;
     int attempts = 0;
@@ -723,6 +872,12 @@ class P2pTransportHost with _FileRequestServerMixin {
         "$_logPrefix [$username]: Broadcasting client list update: ${fullListWithHost.map((c) => c.username).toList()}");
   }
 
+  /// Shares a file with specified recipients or all connected clients.
+  ///
+  /// [file] is the file to be shared.
+  /// [actualSenderIp] is the IP address that clients should use to download the file. This is typically the host's LAN IP.
+  /// [recipients] is an optional list of clients to share the file with. If null, shares with all connected clients.
+  /// Returns [P2pFileInfo] for the shared file, or null if sharing fails.
   Future<P2pFileInfo?> shareFile(File file,
       {required String actualSenderIp, List<P2pClientInfo>? recipients}) async {
     if (_server == null || _portInUse == null) {
@@ -769,6 +924,16 @@ class P2pTransportHost with _FileRequestServerMixin {
     return fileInfo;
   }
 
+  /// Downloads a file identified by [fileId] to the [saveDirectory].
+  ///
+  /// [fileId] is the ID of the file to download.
+  /// [saveDirectory] is the directory where the file will be saved.
+  /// [customFileName] an optional name for the saved file. If null, uses the original file name.
+  /// [deleteOnError] if true (default), deletes partially downloaded file on error.
+  /// [onProgress] a callback function to receive [FileDownloadProgressUpdate]s.
+  /// [rangeStart] optional start byte for a partial download.
+  /// [rangeEnd] optional end byte for a partial download.
+  /// Returns true if the download is successful, false otherwise.
   Future<bool> downloadFile(
     String fileId,
     String saveDirectory, {
@@ -931,6 +1096,12 @@ class P2pTransportHost with _FileRequestServerMixin {
     await sendToClient(originalSenderId, message);
   }
 
+  /// Broadcasts a [P2pMessage] to connected clients.
+  ///
+  /// [message] is the message to broadcast.
+  /// [excludeClientIds] an optional list of client IDs to exclude from the broadcast.
+  /// [includeClientIds] an optional list of client IDs to include in the broadcast (sends only to these).
+  /// Cannot specify both [excludeClientIds] and [includeClientIds].
   Future<void> broadcast(P2pMessage message,
       {List<String>? excludeClientIds, List<String>? includeClientIds}) async {
     if (_server == null) return;
@@ -962,6 +1133,11 @@ class P2pTransportHost with _FileRequestServerMixin {
     }
   }
 
+  /// Sends a [P2pMessage] to a specific client.
+  ///
+  /// [clientId] is the ID of the target client.
+  /// [message] is the message to send.
+  /// Returns true if the message was sent successfully, false otherwise.
   Future<bool> sendToClient(String clientId, P2pMessage message) async {
     if (_server == null) return false;
     final clientData = _clients[clientId];
@@ -982,6 +1158,7 @@ class P2pTransportHost with _FileRequestServerMixin {
     return false;
   }
 
+  /// Stops the P2P host server and disconnects all clients.
   Future<void> stop() async {
     debugPrint("$_logPrefix [$username]: Stopping server...");
     await _receivedTextController.close();
@@ -998,11 +1175,25 @@ class P2pTransportHost with _FileRequestServerMixin {
   }
 }
 
+/// Manages the P2P client connection to a host and local file serving.
+///
+/// The client connects to a [P2pTransportHost] via WebSocket and can send/receive
+/// messages and files. It also runs its own HTTP server to allow other peers
+/// (including the host) to download files shared by this client.
 class P2pTransportClient with _FileRequestServerMixin {
+  /// The IP address of the P2P host server.
   final String hostIp;
+
+  /// The default port to try connecting to the host's WebSocket server.
   final int defaultPort;
+
+  /// The default port for this client's local file server.
   final int defaultFilePort;
+
+  /// The username of this client.
   final String username;
+
+  /// Unique ID for this client instance.
   final String clientId = const Uuid().v4();
   WebSocket? _socket;
   bool _isConnected = false;
@@ -1023,14 +1214,31 @@ class P2pTransportClient with _FileRequestServerMixin {
   @override
   String get transportUsername => username;
 
+  /// Returns true if the client is currently connected to the host.
   bool get isConnected => _isConnected && _socket?.readyState == WebSocket.open;
+
+  /// A list of other clients in the P2P group, as reported by the host.
   List<P2pClientInfo> get clientList => _clientList;
+
+  /// The port on which this client's local file server is running, or null if not started.
   int? get fileServerPort => _fileServerPortInUse;
+
+  /// A list of files currently being hosted (shared) by this client.
   List<HostedFileInfo> get hostedFileInfos => _hostedFiles.values.toList();
+
+  /// A list of files that this client has been informed about and can download.
   List<ReceivableFileInfo> get receivableFileInfos =>
       _receivableFiles.values.toList();
+
+  /// A stream of received text messages from the host or other clients.
   Stream<String> get receivedTextStream => _receivedTextController.stream;
 
+  /// Creates a [P2pTransportClient] instance.
+  ///
+  /// [hostIp] is the IP address of the P2P host.
+  /// [defaultPort] is the port for the host's WebSocket server.
+  /// [defaultFilePort] is the port for this client's local HTTP file server.
+  /// [username] is the display name for this client.
   P2pTransportClient({
     required this.hostIp,
     required this.defaultPort,
@@ -1113,6 +1321,11 @@ class P2pTransportClient with _FileRequestServerMixin {
     }
   }
 
+  /// Connects to the P2P host server.
+  ///
+  /// This will first attempt to start the local file server, then establish
+  /// a WebSocket connection to the host.
+  /// Throws an exception if connection fails.
   Future<void> connect() async {
     if (isConnected || _isConnecting) return;
     _isConnecting = true;
@@ -1168,12 +1381,8 @@ class P2pTransportClient with _FileRequestServerMixin {
       (data) async {
         try {
           final message = P2pMessage.fromJsonString(data as String);
-          P2pClientInfo? senderInfo = _clientList.firstWhere(
-              (c) => c.id == message.senderId,
-              orElse: () => P2pClientInfo(
-                  id: message.senderId,
-                  username: 'Unknown Sender',
-                  isHost: message.senderId == 'server'));
+          P2pClientInfo? senderInfo =
+              _clientList.where((c) => c.id == message.senderId).firstOrNull;
 
           switch (message.type) {
             case P2pMessageType.clientList:
@@ -1187,7 +1396,7 @@ class P2pTransportClient with _FileRequestServerMixin {
               if (message.payload is P2pMessagePayload) {
                 final payload = message.payload as P2pMessagePayload;
                 debugPrint(
-                    "$_logPrefix [$username]: Received payload from ${senderInfo.username} (${senderInfo.id})");
+                    "$_logPrefix [$username]: Received payload from ${senderInfo?.username} (${senderInfo?.id})");
                 if (payload.files.isNotEmpty) {
                   for (var fileInfo in payload.files) {
                     if (_receivableFiles.containsKey(fileInfo.id)) {
@@ -1198,7 +1407,7 @@ class P2pTransportClient with _FileRequestServerMixin {
                     _receivableFiles[fileInfo.id] =
                         ReceivableFileInfo(info: fileInfo);
                     debugPrint(
-                        "$_logPrefix [$username]: Added receivable file: ${fileInfo.name} (ID: ${fileInfo.id}) from ${senderInfo.username}");
+                        "$_logPrefix [$username]: Added receivable file: ${fileInfo.name} (ID: ${fileInfo.id}) from ${senderInfo?.username}");
                   }
                 }
                 if (payload.text.isNotEmpty &&
@@ -1221,7 +1430,7 @@ class P2pTransportClient with _FileRequestServerMixin {
               break;
             case P2pMessageType.unknown:
               debugPrint(
-                  "$_logPrefix [$username]: Received unknown message type from ${senderInfo.username}");
+                  "$_logPrefix [$username]: Received unknown message type from ${senderInfo?.username}");
               break;
           }
         } catch (e, s) {
@@ -1273,6 +1482,14 @@ class P2pTransportClient with _FileRequestServerMixin {
     }
   }
 
+  /// Shares a file with specified recipients or all other clients in the group.
+  ///
+  /// The file information is sent to the host, which then relays it to the target recipients.
+  /// This client must have its local file server running to serve the file.
+  /// [file] is the file to be shared.
+  /// [actualSenderIp] is the IP address that other peers should use to download the file from this client.
+  /// [recipients] an optional list of clients to share the file with. If null, shares with all other clients known.
+  /// Returns [P2pFileInfo] for the shared file, or null if sharing fails (e.g., not connected).
   Future<P2pFileInfo?> shareFile(File file,
       {required String actualSenderIp, List<P2pClientInfo>? recipients}) async {
     if (!isConnected) {
@@ -1326,6 +1543,17 @@ class P2pTransportClient with _FileRequestServerMixin {
     return sent ? fileInfo : null;
   }
 
+  /// Downloads a file identified by [fileId] to the [saveDirectory].
+  ///
+  /// This client will connect to the sender's HTTP server to download the file.
+  /// [fileId] is the ID of the file to download.
+  /// [saveDirectory] is the directory where the file will be saved.
+  /// [customFileName] an optional name for the saved file. If null, uses the original file name.
+  /// [deleteOnError] if true (default), deletes partially downloaded file on error.
+  /// [onProgress] a callback function to receive [FileDownloadProgressUpdate]s.
+  /// [rangeStart] optional start byte for a partial download.
+  /// [rangeEnd] optional end byte for a partial download.
+  /// Returns true if the download is successful, false otherwise.
   Future<bool> downloadFile(
     String fileId,
     String saveDirectory, {
@@ -1498,6 +1726,10 @@ class P2pTransportClient with _FileRequestServerMixin {
     await send(message);
   }
 
+  /// Sends a [P2pMessage] to the host server.
+  ///
+  /// [message] is the message to send.
+  /// Returns true if the message was sent successfully, false if not connected or error.
   Future<bool> send(P2pMessage message) async {
     if (isConnected && _socket != null) {
       try {
@@ -1519,6 +1751,7 @@ class P2pTransportClient with _FileRequestServerMixin {
     }
   }
 
+  /// Disconnects from the P2P host server and stops the local file server.
   Future<void> disconnect() async {
     debugPrint("$_logPrefix [$username]: Disconnecting...");
     await _socketSubscription?.cancel();
@@ -1528,6 +1761,10 @@ class P2pTransportClient with _FileRequestServerMixin {
     debugPrint("$_logPrefix [$username]: Disconnected.");
   }
 
+  /// Cleans up resources used by the client.
+  ///
+  /// This includes disconnecting from the host and closing any open streams.
+  /// Should be called when the client is no longer needed.
   Future<void> dispose() async {
     debugPrint("$_logPrefix [$username]: Disposing...");
     await disconnect();
