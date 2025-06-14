@@ -43,6 +43,9 @@ flutter:
       android:
         package: com.ugo.studio.plugins.flutter_p2p_connection
         pluginClass: FlutterP2pConnectionPlugin
+      windows:
+        package: com.ugo.studio.plugins.flutter_p2p_connection
+        pluginClass: FlutterP2pConnectionPlugin
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:
