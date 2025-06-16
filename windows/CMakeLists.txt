@@ -22,6 +22,9 @@ list(APPEND PLUGIN_SOURCES
   "flutter_p2p_connection_plugin.h"
 )
 
+# Find the C++/WinRT build support package.
+find_package(CppWinRT REQUIRED)
+
 # Define the plugin library target. Its name must not be changed (see comment
 # on PLUGIN_NAME above).
 add_library(${PLUGIN_NAME} SHARED
@@ -47,6 +50,9 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
+target_link_libraries(${PLUGIN_NAME} PRIVATE CppWinRT::CppWinRT)
+
+target_precompile_headers(${PLUGIN_NAME} PRIVATE pch.h)
 
 # List of absolute paths to libraries that should be bundled with the plugin.
 # This list could contain prebuilt libraries, or libraries created by an

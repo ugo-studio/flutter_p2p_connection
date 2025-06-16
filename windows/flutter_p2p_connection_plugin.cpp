@@ -1,59 +1,68 @@
+#include "pch.h"
 #include "flutter_p2p_connection_plugin.h"
-
-// This must be included before many other Windows headers.
-#include <windows.h>
-
-// For getPlatformVersion; remove unless needed for your plugin implementation.
-#include <VersionHelpers.h>
-
-#include <flutter/method_channel.h>
-#include <flutter/plugin_registrar_windows.h>
-#include <flutter/standard_method_codec.h>
-
-#include <memory>
-#include <sstream>
+#include "constants.h"
+#include "utils.h"
 
 namespace flutter_p2p_connection {
 
-// static
-void FlutterP2pConnectionPlugin::RegisterWithRegistrar(
-    flutter::PluginRegistrarWindows *registrar) {
-  auto channel =
-      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          registrar->messenger(), "flutter_p2p_connection",
-          &flutter::StandardMethodCodec::GetInstance());
+void FlutterP2pConnectionPlugin::RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar) {
+    auto plugin = std::make_unique<FlutterP2pConnectionPlugin>(registrar);
+    auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+        registrar->messenger(), Constants::METHOD_CHANNEL_NAME,
+        &flutter::StandardMethodCodec::GetInstance());
 
-  auto plugin = std::make_unique<FlutterP2pConnectionPlugin>();
+    channel->SetMethodCallHandler(
+        [plugin_pointer = plugin.get()](const auto& call, auto result) {
+            plugin_pointer->HandleMethodCall(call, std::move(result));
+        });
 
-  channel->SetMethodCallHandler(
-      [plugin_pointer = plugin.get()](const auto &call, auto result) {
-        plugin_pointer->HandleMethodCall(call, std::move(result));
-      });
-
-  registrar->AddPlugin(std::move(plugin));
+    registrar->AddPlugin(std::move(plugin));
 }
 
-FlutterP2pConnectionPlugin::FlutterP2pConnectionPlugin() {}
+FlutterP2pConnectionPlugin::FlutterP2pConnectionPlugin(flutter::PluginRegistrarWindows* registrar)
+    : registrar_(registrar) {
+    // Initialize COM for WinRT and other COM-based APIs on this thread.
+    winrt::init_apartment();
 
-FlutterP2pConnectionPlugin::~FlutterP2pConnectionPlugin() {}
+    // TODO: Instantiate manager classes here, passing the registrar or messenger
+    // service_manager_ = std::make_unique<ServiceManager>(registrar);
+    // ble_manager_ = std::make_unique<BleManager>(registrar);
+}
+
+FlutterP2pConnectionPlugin::~FlutterP2pConnectionPlugin() {
+    // TODO: Clean up resources if needed
+    // ble_manager_->Dispose();
+    winrt::uninit_apartment();
+}
 
 void FlutterP2pConnectionPlugin::HandleMethodCall(
-    const flutter::MethodCall<flutter::EncodableValue> &method_call,
+    const flutter::MethodCall<flutter::EncodableValue>& method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-  if (method_call.method_name().compare("getPlatformVersion") == 0) {
-    std::ostringstream version_stream;
-    version_stream << "Windows ";
-    if (IsWindows10OrGreater()) {
-      version_stream << "10+";
-    } else if (IsWindows8OrGreater()) {
-      version_stream << "8";
-    } else if (IsWindows7OrGreater()) {
-      version_stream << "7";
+
+    const std::string& method = method_call.method_name();
+
+    if (method == "getPlatformVersion") {
+        OSVERSIONINFOEXW os_info = { sizeof(os_info) };
+        if (RtlGetVersion(&os_info) == 0) {
+            std::wstringstream ss;
+            ss << L"Windows " << os_info.dwMajorVersion << L"." << os_info.dwMinorVersion << L" Build " << os_info.dwBuildNumber;
+            result->Success(flutter::EncodableValue(utils::wstring_to_string(ss.str())));
+        } else {
+            result->Error("VERSION_ERROR", "Failed to get Windows version.");
+        }
     }
-    result->Success(flutter::EncodableValue(version_stream.str()));
-  } else {
-    result->NotImplemented();
-  }
+    // TODO: Route method calls to the appropriate manager class
+    /*
+    else if (method == "checkBluetoothEnabled") {
+        service_manager_->CheckBluetoothEnabled(std::move(result));
+    }
+    else if (method.rfind("ble#", 0) == 0) {
+        ble_manager_->HandleMethodCall(method, method_call.arguments(), std::move(result));
+    }
+    */
+    else {
+        result->NotImplemented();
+    }
 }
 
-}  // namespace flutter_p2p_connection
+} 
