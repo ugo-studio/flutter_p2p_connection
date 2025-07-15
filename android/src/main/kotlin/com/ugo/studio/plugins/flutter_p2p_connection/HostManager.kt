@@ -136,9 +136,25 @@ class HostManager(
                 Log.d(TAG, "LocalOnlyHotspot Started.")
                 hotspotReservation = reservation
                 val config = reservation.wifiConfiguration
-                val hotspotIp = DataUtils.getHostIpAddress() // Use utility function
-                hotspotInfoData = DataUtils.createHotspotInfoMap(true, config, hotspotIp)
-                mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
+                
+                // Try to get IP immediately, then retry after a delay if needed
+                val initialHotspotIp = DataUtils.getHostIpAddress()
+                if (initialHotspotIp == null) {
+                    Log.d(TAG, "Hotspot IP not immediately available, retrying after delay...")
+                    mainHandler.postDelayed({
+                        var finalHotspotIp = DataUtils.getHostIpAddress()
+                        if (finalHotspotIp == null) {
+                            // Final fallback - use the common LocalOnlyHotspot IP
+                            finalHotspotIp = "192.168.49.1"
+                            Log.w(TAG, "Using fallback LocalOnlyHotspot IP: $finalHotspotIp")
+                        }
+                        hotspotInfoData = DataUtils.createHotspotInfoMap(true, config, finalHotspotIp)
+                        mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
+                    }, 500) // 500ms delay for interface to be created
+                } else {
+                    hotspotInfoData = DataUtils.createHotspotInfoMap(true, config, initialHotspotIp)
+                    mainHandler.post { hotspotStateEventSink?.success(hotspotInfoData!!) }
+                }
             }
             override fun onStopped() {
                 super.onStopped()
