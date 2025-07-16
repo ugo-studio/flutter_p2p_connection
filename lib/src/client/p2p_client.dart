@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../flutter_p2p_connection_platform_interface.dart';
 import '../common/p2p_constants.dart';
 import '../common/p2p_connection_base.dart';
+import '../common/utils.dart';
 import '../models/p2p_connection_models.dart';
 import '../transport/common/transport_data_models.dart';
 import '../transport/common/transport_enums.dart';
@@ -389,19 +390,19 @@ class FlutterP2pClient extends FlutterP2pConnectionBase {
   /// connection status to a hotspot, including whether it's connected, the
   /// host's SSID, and IP address details (gateway and client IP).
   Stream<HotspotClientState> streamHotspotState() {
-    return FlutterP2pConnectionPlatform.instance
-        .streamHotspotClientState()
-        .map((state) {
-      if (state.isActive &&
-          state.hostGatewayIpAddress != null &&
-          state.hostIpAddress != null) {
-        _lastKnownClientState = state; // Keep track of the latest good state
-      } else if (!state.isActive && _lastKnownClientState?.isActive == true) {
-        // If it becomes inactive, clear our known good state.
-        // _lastKnownClientState = state; // Store the inactive state
-      }
-      return state;
-    });
+    return FlutterP2pConnectionPlatform.instance.streamHotspotClientState().map(
+      (state) {
+        if (state.isActive &&
+            state.hostGatewayIpAddress != null &&
+            state.hostIpAddress != null) {
+          _lastKnownClientState = state; // Keep track of the latest good state
+        } else if (!state.isActive && _lastKnownClientState?.isActive == true) {
+          // If it becomes inactive, clear our known good state.
+          // _lastKnownClientState = state; // Store the inactive state
+        }
+        return state;
+      },
+    );
   }
 
   /// Provides a stream that periodically emits the updated list of connected [P2pClientInfo]s
@@ -489,9 +490,10 @@ class FlutterP2pClient extends FlutterP2pConnectionBase {
             client.id != transport.clientId &&
             (excludeClientIds == null || !excludeClientIds.contains(client.id)))
         .toList();
+    var actualSenderIp =
+        await getLocalIpAddress() ?? _lastKnownClientState!.hostIpAddress!;
     return await transport.shareFile(file,
-        actualSenderIp: _lastKnownClientState!.hostIpAddress!,
-        recipients: recipients);
+        actualSenderIp: actualSenderIp, recipients: recipients);
   }
 
   /// Sends a [File] to a specific client in the group.
@@ -518,9 +520,10 @@ class FlutterP2pClient extends FlutterP2pConnectionBase {
       debugPrint("Client: Target client $clientId not found for sending file.");
       return null;
     }
+    var actualSenderIp =
+        await getLocalIpAddress() ?? _lastKnownClientState!.hostIpAddress!;
     return await transport.shareFile(file,
-        actualSenderIp: _lastKnownClientState!.hostIpAddress!,
-        recipients: recipients);
+        actualSenderIp: actualSenderIp, recipients: recipients);
   }
 
   /// Provides a stream of text messages received from the host or other clients.

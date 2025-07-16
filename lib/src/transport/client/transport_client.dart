@@ -32,6 +32,7 @@ class P2pTransportClient with FileRequestServerMixin {
 
   /// Unique ID for this client instance.
   final String clientId = const Uuid().v4();
+
   WebSocket? _socket;
   bool _isConnected = false;
   bool _isConnecting = false;
@@ -99,6 +100,8 @@ class P2pTransportClient with FileRequestServerMixin {
     while (attempts < 10) {
       try {
         _fileServer = await HttpServer.bind(InternetAddress.anyIPv4, port);
+        _fileServer!.idleTimeout =
+            null; // Disable idleTimeout to avoid disconnection when idle
         _fileServerPortInUse = port;
         debugPrint(
             "$_logPrefix [$username]: File server started on port $_fileServerPortInUse");
@@ -214,6 +217,8 @@ class P2pTransportClient with FileRequestServerMixin {
             "$_logPrefix [$username]: Attempting WebSocket connect to $url...");
         tempSocket = await WebSocket.connect(url.toString())
             .timeout(const Duration(seconds: 10));
+        tempSocket.pingInterval = const Duration(
+            seconds: 5); // Set ping interval to avoid disconnection when idle
         debugPrint("$_logPrefix [$username]: WebSocket connected to $url");
       } on TimeoutException {
         debugPrint(
