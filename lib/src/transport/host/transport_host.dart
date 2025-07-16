@@ -75,6 +75,8 @@ class P2pTransportHost with FileRequestServerMixin {
     while (attempts < 10) {
       try {
         _server = await HttpServer.bind(InternetAddress.anyIPv4, port);
+        _server!.idleTimeout =
+            null; // Disable idleTimeout to avoid disconnection when idle
         _portInUse = port;
         debugPrint(
             "$_logPrefix [$username]: Server started on port $_portInUse");
@@ -111,6 +113,9 @@ class P2pTransportHost with FileRequestServerMixin {
             WebSocketTransformer.isUpgradeRequest(request)) {
           try {
             WebSocket websocket = await WebSocketTransformer.upgrade(request);
+            websocket.pingInterval = const Duration(
+                seconds:
+                    5); // Set ping interval to avoid disconnection when idle
             _handleClientConnect(websocket, request);
           } catch (e) {
             debugPrint(

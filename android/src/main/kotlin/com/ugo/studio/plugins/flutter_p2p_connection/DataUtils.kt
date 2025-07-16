@@ -116,19 +116,28 @@ object DataUtils {
 
     // Helper to find the Host's IP address when acting as hotspot or Client's view of it
     fun getHostIpAddress(): String? {
+        var hotspotIp : String? = null
         var potentialIp : String? = null
+        var fallbackIp : String? = null
         try {
             val interfaces: List<NetworkInterface> = Collections.list(NetworkInterface.getNetworkInterfaces())
             for (intf in interfaces) {
                 if (!intf.isUp || intf.isLoopback || intf.isVirtual) continue // Skip down, loopback, virtual
 
-                // Prioritize interfaces named 'ap' or 'wlan' containing typical hotspot IPs
-                val isPotentialHotspotIntf = intf.name.contains("ap", ignoreCase = true) || intf.name.contains("wlan", ignoreCase = true)
+                // Log all interfaces for debugging
+                Log.d(TAG, "Checking interface: ${intf.name}, isUp: ${intf.isUp}")
+
+                // Check for specific hotspot interface patterns
+                val isP2pInterface = intf.name.contains("p2p-wlan", ignoreCase = true)
+                val isApInterface = intf.name.contains("ap", ignoreCase = true)
+                val isWlanInterface = intf.name.contains("wlan", ignoreCase = true)
+                val isSwlanInterface = intf.name.contains("swlan", ignoreCase = true) // Samsung devices
 
                 val addresses: List<InetAddress> = Collections.list(intf.inetAddresses)
                 for (addr in addresses) {
                     if (!addr.isLoopbackAddress && addr is Inet4Address) {
                         val ip = addr.hostAddress ?: continue
+                        Log.d(TAG, "  Found IP: $ip on interface ${intf.name}")
 
                         // Common hotspot IPs (192.168.43.1 for tethering, 192.168.49.1 for LOHS)
                         if (ip == "192.168.43.1" || ip == "192.168.49.1") {
@@ -136,10 +145,29 @@ object DataUtils {
                             return ip // Return immediately if common IP found
                         }
 
-                        // Store the first 192.168.* IP found on a potential hotspot interface as a fallback
-                        if (isPotentialHotspotIntf && ip.startsWith("192.168.") && potentialIp == null) {
-                             Log.d(TAG, "Found potential hotspot range IP: $ip on interface ${intf.name}")
+                        // Prioritize p2p-wlan interfaces for LocalOnlyHotspot
+                        if (isP2pInterface && ip.startsWith("192.168.")) {
+                            Log.d(TAG, "Found P2P hotspot IP: $ip on interface ${intf.name}")
+                            return ip // Return immediately for p2p interfaces
+                        }
+
+                        // Check for swlan (Samsung) or ap interfaces
+                        if ((isSwlanInterface || isApInterface) && ip.startsWith("192.168.") && hotspotIp == null) {
+                             Log.d(TAG, "Found hotspot IP on AP/SWLAN interface: $ip on interface ${intf.name}")
+                             hotspotIp = ip
+                         }
+
+                        // Store regular wlan IPs as potential only if they're in hotspot range
+                        if (isWlanInterface && ip.startsWith("192.168.") && 
+                            (ip.startsWith("192.168.43.") || ip.startsWith("192.168.49.")) && potentialIp == null) {
+                             Log.d(TAG, "Found potential hotspot-range IP: $ip on interface ${intf.name}")
                              potentialIp = ip
+                         }
+
+                        // Store any other 192.168.x.1 IP as last resort fallback
+                        if (ip.matches(Regex("192\\.168\\.\\d+\\.1")) && fallbackIp == null) {
+                             Log.d(TAG, "Found fallback gateway-like IP: $ip on interface ${intf.name}")
+                             fallbackIp = ip
                          }
                     }
                 }
@@ -148,9 +176,20 @@ object DataUtils {
             Log.e(TAG, "Exception while getting Host IP address: $ex")
         }
 
+         // Return in order of preference
+         if(hotspotIp != null) {
+            Log.d(TAG, "Using hotspot IP: $hotspotIp")
+            return hotspotIp
+         }
+
          if(potentialIp != null) {
-            Log.d(TAG, "Using fallback potential host IP: $potentialIp")
+            Log.d(TAG, "Using potential hotspot-range IP: $potentialIp")
             return potentialIp
+         }
+
+         if(fallbackIp != null) {
+            Log.d(TAG, "Using fallback gateway IP: $fallbackIp")
+            return fallbackIp
          }
 
         Log.w(TAG, "Could not determine host IP address.")
