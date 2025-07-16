@@ -74,7 +74,8 @@ class P2pTransportHost with FileRequestServerMixin {
     int port = defaultPort;
     while (attempts < 10) {
       try {
-        _server = await HttpServer.bind(InternetAddress.anyIPv4, port);
+        _server =
+            await HttpServer.bind(InternetAddress.anyIPv4, port, shared: true);
         _server!.idleTimeout =
             null; // Disable idleTimeout to avoid disconnection when idle
         _portInUse = port;

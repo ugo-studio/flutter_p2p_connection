@@ -1,3 +1,7 @@
+## 3.0.2
+
+improve connection stability and file sharing with port sharing
+
 ## 3.0.1
 
 feat: improve connection stability and file sharing
