@@ -1,6 +1,6 @@
 name: flutter_p2p_connection
 description: A WiFi Direct Plugin for Flutter.
-version: 3.0.2
+version: 3.0.3
 homepage: https://github.com/ugo-studio/flutter_p2p_connection.git
 repository: https://github.com/ugo-studio/flutter_p2p_connection
 issue_tracker: https://github.com/ugo-studio/flutter_p2p_connection/issues
@@ -43,9 +43,9 @@ flutter:
       android:
         package: com.ugo.studio.plugins.flutter_p2p_connection
         pluginClass: FlutterP2pConnectionPlugin
-      windows:
-        package: com.ugo.studio.plugins.flutter_p2p_connection
-        pluginClass: FlutterP2pConnectionPluginCApi
+      # windows:
+      #   package: com.ugo.studio.plugins.flutter_p2p_connection
+      #   pluginClass: FlutterP2pConnectionPluginCApi
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:

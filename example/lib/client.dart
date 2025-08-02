@@ -240,6 +240,13 @@ class _ClientPageState extends State<ClientPage> {
     }
   }
 
+  void startFileDownload(ReceivableFileInfo file) async {
+    snack("Downloading ${file.info.name}...");
+    var downloaded = await p2pInterface.downloadFile(
+        file.info.id, '/storage/emulated/0/Download/');
+    snack("${file.info.name} download: $downloaded");
+  }
+
   Widget _buildSection(String title, List<Widget> children) {
     return Card(
       elevation: 2,
@@ -446,16 +453,7 @@ class _ClientPageState extends State<ClientPage> {
                                   Text("Status: ${file.state.name}, $percent%"),
                               trailing: file.state == ReceivableFileState.idle
                                   ? ElevatedButton(
-                                      onPressed: () async {
-                                        snack(
-                                            "Downloading ${file.info.name}...");
-                                        var downloaded =
-                                            await p2pInterface.downloadFile(
-                                                file.info.id,
-                                                '/storage/emulated/0/Download/');
-                                        snack(
-                                            "${file.info.name} download: $downloaded");
-                                      },
+                                      onPressed: () => startFileDownload(file),
                                       child: const Text('Download'),
                                     )
                                   : (file.state ==
@@ -465,8 +463,12 @@ class _ClientPageState extends State<ClientPage> {
                                               ReceivableFileState.completed
                                           ? const Icon(Icons.check_circle,
                                               color: Colors.green)
-                                          : const Icon(Icons.error,
-                                              color: Colors.red))),
+                                          : ElevatedButton(
+                                              onPressed: () =>
+                                                  startFileDownload(file),
+                                              child: const Icon(Icons.error,
+                                                  color: Colors.red),
+                                            ))),
                             ),
                           );
                         },

@@ -1,3 +1,7 @@
+## 3.0.3
+
+use correct IP for file transfers
+
 ## 3.0.2
 
 improve connection stability and file sharing with port sharing
